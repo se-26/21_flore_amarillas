@@ -165,3 +165,5 @@ class EndingScreen(ListMenu):
         ui.text(surf, f"Flores totales: {p.total_flowers}    Caidas: {p.deaths}",
                 (S.GAME_W // 2, 126), 11, (110, 72, 40), shadow=None, center=True)
         self.draw_options(surf, 148, 22, 14, 180)
+        ui.text(surf, "juego creado por Selena",
+                (S.GAME_W // 2, 202), 12, (235, 40, 130), shadow=None, center=True)

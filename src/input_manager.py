@@ -65,6 +65,20 @@ class TouchButton:
             ui.text(surf, self.label, (cx, cy - 6), 11, col, shadow=None, center=True)
 
 
+def es_movil():
+    try:
+        drv = (pygame.display.get_driver() or "").lower()
+        if any(k in drv for k in ("android", "ios", "emscripten", "wasm", "web")):
+            return True
+    except Exception:
+        pass
+    import os
+    env = " ".join((k + "=" + v).lower() for k, v in os.environ.items())
+    if any(k in env for k in ("pgs4a", "buildozer", "termux", "__android__", "android_")):
+        return True
+    return False
+
+
 class TouchInput:
     """Botones tactiles dibujados en pixel art, con transparencia."""
 
@@ -73,13 +87,13 @@ class TouchInput:
         self.buttons = [
             TouchButton("left", (8, h - 46, 34, 34), "<"),
             TouchButton("right", (48, h - 46, 34, 34), ">"),
-            TouchButton("down", (28, h - 84, 34, 34), "v"),
-            TouchButton("jump", (S.GAME_W - 50, h - 46, 40, 36), "SALTO"),
+            TouchButton("jump", (28, h - 89, 34, 34), "SALTO"),
             TouchButton("attack", (S.GAME_W - 96, h - 46, 40, 36), "FLOR"),
-            TouchButton("interact", (S.GAME_W - 74, h - 88, 40, 32), "E"),
+            TouchButton("down", (S.GAME_W - 52, h - 88, 36, 32), "v"),
+            TouchButton("interact", (S.GAME_W - 128, h - 88, 36, 32), "E"),
         ]
         self.fingers = {}
-        self.enabled = False
+        self.enabled = es_movil()
 
     def _hit(self, pos):
         for b in self.buttons:
@@ -95,12 +109,20 @@ class TouchInput:
                 self.fingers.pop(event.finger_id, None)
             else:
                 self.fingers[event.finger_id] = pos
-        elif event.type == pygame.MOUSEBUTTONDOWN and self.enabled:
-            self.fingers["mouse"] = to_internal(event.pos)
-        elif event.type == pygame.MOUSEMOTION and "mouse" in self.fingers:
-            self.fingers["mouse"] = to_internal(event.pos)
+        elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION):
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                self.enabled = True
+                if event.button != 1:
+                    return
+            if not self.enabled:
+                return
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                self.fingers["mouse"] = to_internal(event.pos)
+            elif "mouse" in self.fingers:
+                self.fingers["mouse"] = to_internal(event.pos)
         elif event.type == pygame.MOUSEBUTTONUP:
-            self.fingers.pop("mouse", None)
+            if event.button == 1:
+                self.fingers.pop("mouse", None)
 
     def update(self):
         state = {a: False for a in ACTIONS}

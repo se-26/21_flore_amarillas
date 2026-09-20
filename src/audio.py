@@ -85,6 +85,7 @@ class AudioManager:
         self.music_volume = 0.45
         self.sfx_volume = 0.6
         self._file_music = {}
+        self.final_lock = None
         try:
             pygame.mixer.init(SR, -16, 2, 512)
             self.enabled = True
@@ -192,6 +193,8 @@ class AudioManager:
     def play_music(self, key, fade_ms=600, force=False):
         if not self.enabled:
             return
+        if self.final_lock and not force and key != self.final_lock:
+            return
         if key == self.current and not force:
             return
         self.stop_music(fade_ms if not force else 0)
@@ -218,6 +221,7 @@ class AudioManager:
         """Pista final: usa flores_amarillas_final.ogg si existe."""
         key = "flores_amarillas_final" if "flores_amarillas_final" in self._file_music \
             else "final_theme"
+        self.final_lock = key
         self.play_music(key, fade_ms=900, force=True)
 
     def stop_music(self, fade_ms=400):

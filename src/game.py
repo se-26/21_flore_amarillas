@@ -24,6 +24,17 @@ from .ui import HUD, ObjectiveCard, QuickPanel
 TOTAL_LEVELS = 6
 
 
+def _juego_en_movil():
+    try:
+        drv = (pygame.display.get_driver() or "").lower()
+        if "android" in drv or "ios" in drv or "emscripten" in drv or "wasm" in drv:
+            return True
+    except Exception:
+        pass
+    env = " ".join((k + "=" + v).lower() for k, v in __import__("os").environ.items())
+    return any(k in env for k in ("pgs4a", "buildozer", "termux", "android_"))
+
+
 class Game:
     def __init__(self):
         pygame.mixer.pre_init(44100, -16, 2, 512)
@@ -42,6 +53,8 @@ class Game:
             pass
         self.audio = AudioManager()
         self.input = InputManager()
+        self.es_movil = _juego_en_movil()
+
         self.particles = ParticleSystem(ui.get_font(11))
         self.dialogue = DialogueSystem(self)
         self.progress = Progress()
@@ -94,6 +107,10 @@ class Game:
         r = self.scale_rect
         if r.w == 0 or r.h == 0:
             return pos
+        if getattr(self, "_rotar_retrato", False):
+            x = (r.w - (pos[1] - r.y)) * S.GAME_W / r.h
+            y = (pos[0] - r.x) * S.GAME_H / r.w
+            return (x, y)
         x = (pos[0] - r.x) * S.GAME_W / r.w
         y = (pos[1] - r.y) * S.GAME_H / r.h
         return (x, y)
@@ -237,7 +254,15 @@ class Game:
         door = self.level.door
         self.enemy_shots.clear()
         self.projectiles.clear()
-        self.final = FinalScene(self, door.rect.centerx + 20, door.rect.bottom)
+        tx = door.rect.centerx + 20
+        tiles = self.level.tiles
+        col = int(tx) // S.TILE
+        ty = door.rect.bottom
+        for r in range(tiles.rows):
+            if tiles.is_solid(col, r) or tiles.is_platform(col, r):
+                ty = r * S.TILE
+                break
+        self.final = FinalScene(self, tx, ty)
         self.state = "final"
 
     def complete_level(self):
@@ -429,7 +454,14 @@ class Game:
         for c in level.checkpoints:
             if not c.active and player.hitbox.colliderect(c.rect):
                 c.active = True
-                self.checkpoint_pos = (c.rect.x, c.rect.bottom - player.H)
+                tiles = level.tiles
+                col = int(c.rect.centerx) // S.TILE - 1
+                row = int(c.rect.bottom) // S.TILE
+                while row < tiles.rows and not (
+                        tiles.is_solid(col, row) or tiles.is_platform(col, row)):
+                    row += 1
+                self.checkpoint_pos = (col * S.TILE,
+                                       row * S.TILE - player.H)
                 self.audio.play("checkpoint")
                 self.particles.sparkle(c.rect.centerx, c.rect.top, 14)
                 self.notify("CHECKPOINT", 1.6)
@@ -593,6 +625,8 @@ class Game:
 
     def _present(self):
         win_w, win_h = self.window.get_size()
+        portrait = getattr(self, "es_movil", False) and win_h > win_w
+        self._rotar_retrato = portrait
         scale = getattr(self, "_draw_scale", min(win_w / S.GAME_W, win_h / S.GAME_H))
         w, h = int(S.GAME_W * scale), int(S.GAME_H * scale)
         x, y = (win_w - w) // 2, (win_h - h) // 2
@@ -606,8 +640,14 @@ class Game:
             crop = pygame.Rect(int((zw - S.GAME_W) / 2), int((zh - S.GAME_H) / 2),
                                S.GAME_W, S.GAME_H)
             source = big.subsurface(crop)
-        self.window.blit(pygame.transform.scale(source, (w, h)), (x, y))
-        ui.blit_hires(self.window, (x, y))
+        frame = pygame.transform.scale(source, (w, h))
+        if self._rotar_retrato:
+            frame = pygame.transform.rotate(frame, 90)
+            fx, fy = (win_w - frame.get_width()) // 2, (win_h - frame.get_height()) // 2
+            self.window.blit(frame, (fx, fy))
+        else:
+            self.window.blit(frame, (x, y))
+            ui.blit_hires(self.window, (x, y))
         ui.end_hires()
         pygame.display.flip()
 

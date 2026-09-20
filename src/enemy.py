@@ -146,7 +146,7 @@ class Enemy:
 
     def _ai_perseguidor(self, dt, level, player):
         dist = abs(player.rect.centerx - self.rect.centerx)
-        if dist < 130 and abs(player.rect.centery - self.rect.centery) < 80:
+        if dist < 220 and abs(player.rect.centery - self.rect.centery) < 170:
             self.active = True
         if self.active:
             d = 1 if player.rect.centerx > self.rect.centerx else -1

@@ -44,21 +44,23 @@ class MovingPlatform:
 
 
 class VanishPlatform:
-    CYCLE = 10.0
+    CYCLE = 15.0
+    PRESENTE = 10.0
+    PERIODO_VISIBLE = 5.0
 
     def __init__(self, x, y, w, phase):
         self.rect = pygame.Rect(int(x), int(y), w * S.TILE, 6)
         self.phase = phase
-        self.t = phase
-        self.solid = True
+        self.t = phase % self.CYCLE
+        self.solid = self.t < self.PRESENTE
         self.alpha = 255
 
     def update(self, dt):
         self.t = (self.t + dt) % self.CYCLE
-        on = self.t < self.CYCLE * 0.62
+        on = self.t < self.PRESENTE
         self.solid = on
         if on:
-            fade = min(1.0, (self.CYCLE * 0.62 - self.t) / 0.5)
+            fade = min(1.0, (self.PRESENTE - self.t) / 0.5)
             self.alpha = int(120 + 135 * fade)
         else:
             self.alpha = 60

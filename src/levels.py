@@ -309,10 +309,12 @@ def level_3():
             b.ground(x, x + 14, gy)
             for i in range(3):
                 b.block(x + 2 + i * 4, gy - 3 - i, 2, 3 + i)
-            b.flower(x + 10, gy - 7)
             b.scatter_deco(x, x + 14, gy - 1, 0.7)
             b.enemy("saltarin", x + 12, gy - 1)
             x += 16
+            b.ground(x, x + 4, gy)
+            b.flower(x + 2, gy - 2)
+            x += 5
         if x > 60 and len([e for e in d.entities if e["kind"] == "checkpoint"]) < 2:
             b.check(x - 3, gy - 1)
         if x > 100 and not any(e["kind"] == "sunflower" for e in d.entities):
@@ -426,9 +428,12 @@ def level_5():
         p = b.rnd.choice(["parpadeo", "trampa", "lanzadores", "luces"])
         if p == "parpadeo":
             for i in range(5):
-                b.vanish(x + i * 4, gy - 3 - (i % 2) * 2, 3, phase=i * 0.7)
                 if i % 2 == 0:
+                    b.plat(x + i * 4, gy - 3 - (i % 2) * 2, 3)
                     b.flower(x + i * 4 + 1, gy - 5 - (i % 2) * 2)
+                else:
+                    b.mover(x + i * 4, gy - 3 - (i % 2) * 2, 3, 0, -1,
+                            2 * S.TILE, 26)
             x += 22
         elif p == "trampa":
             b.ground(x, x + 12, gy)
@@ -480,7 +485,7 @@ def level_6():
     d = LevelData("jardin", 6, "EL JARDIN FINAL", "jardin",
                   ["Derrota al guardian del jardin.",
                    "Reune 10 flores y entrega el ramo."], 10,
-                  music="final_theme", boss=True)
+                  music="flores_amarillas_final", boss=True)
     b = Builder(d, 130, 22, 606)
     gy = 16
     b.ground(0, 40, gy)
