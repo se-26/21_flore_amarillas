@@ -23,8 +23,7 @@ por capas e interfaz. No hace falta descargar ninguna imagen ni sonido.
 | `F5` | Guardado rápido |
 | `F11` | Pantalla completa |
 
-En móvil aparecen automáticamente botones táctiles pixel art (izquierda, derecha,
-agacharse, salto, flor e interactuar) y un aviso para girar el dispositivo.
+También puedes usar el ratón para navegar por los menús.
 
 ---
 
@@ -146,16 +145,6 @@ volúmenes; se guardan en `save.json`.
 `save.json` guarda personaje, destinatario, nivel actual, nivel desbloqueado,
 flores totales, poder y configuración de audio. Si el archivo no existe se crea,
 y si está corrupto se repara solo.
-
----
-
-## 📱 Sobre móvil
-
-La arquitectura de entrada ya está preparada para táctil (`InputManager` con
-`KeyboardInput` y `TouchInput`), con interfaz adaptable y botones grandes.
-**Esto no convierte el proyecto en un APK**: para Android habría que empaquetarlo
-después con una herramienta externa (por ejemplo python-for-android / Buildozer,
-que requiere trabajo adicional). En PC funciona tal cual.
 
 ---
 

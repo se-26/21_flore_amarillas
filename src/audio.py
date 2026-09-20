@@ -3,6 +3,9 @@
 Prioridad: si existe el archivo en assets/ se usa; si no, se sintetiza con
 numpy; si tampoco hay numpy o tarjeta de sonido, el juego sigue en silencio.
 Nunca falla por un archivo ausente.
+
+Musica y efectos siempre se reproducen con pygame.mixer.Sound (no
+mixer.music).
 """
 import os
 
@@ -85,6 +88,7 @@ class AudioManager:
         self.music_volume = 0.45
         self.sfx_volume = 0.6
         self._file_music = {}
+        self._sound_cache = {}
         self.final_lock = None
         try:
             pygame.mixer.init(SR, -16, 2, 512)
@@ -107,16 +111,21 @@ class AudioManager:
                     except Exception:
                         pass
         if os.path.isdir(S.MUSIC_DIR):
-            for f in os.listdir(S.MUSIC_DIR):
+            pref = {}
+            for f in sorted(os.listdir(S.MUSIC_DIR)):
                 name, ext = os.path.splitext(f)
-                if ext.lower() in (".ogg", ".mp3", ".wav"):
-                    self._file_music[name] = os.path.join(S.MUSIC_DIR, f)
-            # Alias: "flores amarillas (...)" del usuario -> flores_amarillas_final
-            for name, path in list(self._file_music.items()):
+                ext = ext.lower()
+                if ext not in (".ogg", ".mp3", ".wav"):
+                    continue
+                # Alias: "flores amarillas (...)" del usuario -> flores_amarillas_final
                 low = name.lower()
-                if "flores" in low and "amarill" in low and \
-                        "flores_amarillas_final" not in self._file_music:
-                    self._file_music["flores_amarillas_final"] = path
+                key = "flores_amarillas_final" \
+                    if ("flores" in low and "amarill" in low) else name
+                rank = (0 if ext == ".ogg" else 1 if ext == ".wav" else 2)
+                prev = pref.get(key)
+                if prev is None or rank < prev[1]:
+                    pref[key] = (os.path.join(S.MUSIC_DIR, f), rank)
+            self._file_music = {k: v[0] for k, v in pref.items()}
 
     def _synth(self):
         def add(name, samples):
@@ -207,13 +216,15 @@ class AudioManager:
         path = self._file_music.get(key)
         try:
             if path:
-                pygame.mixer.music.load(path)
-                pygame.mixer.music.set_volume(self.music_volume)
-                pygame.mixer.music.play(-1, fade_ms=fade_ms)
-            elif key in self.music:
-                snd = self.music[key]
-                snd.set_volume(self.music_volume)
-                snd.play(loops=-1, fade_ms=fade_ms)
+                if path not in self._sound_cache:
+                    self._sound_cache[path] = pygame.mixer.Sound(path)
+                snd = self._sound_cache[path]
+            else:
+                snd = self.music.get(key)
+            if snd is None:
+                return
+            snd.set_volume(self.music_volume)
+            snd.play(loops=-1, fade_ms=fade_ms)
         except Exception:
             pass
 
@@ -227,18 +238,14 @@ class AudioManager:
     def stop_music(self, fade_ms=400):
         if not self.enabled:
             return
-        try:
-            if fade_ms:
-                pygame.mixer.music.fadeout(fade_ms)
-            else:
-                pygame.mixer.music.stop()
-        except Exception:
-            pass
-        for snd in self.music.values():
-            if fade_ms:
-                snd.fadeout(fade_ms)
-            else:
-                snd.stop()
+        for snd in set(self.music.values()) | set(self._sound_cache.values()):
+            try:
+                if fade_ms:
+                    snd.fadeout(fade_ms)
+                else:
+                    snd.stop()
+            except Exception:
+                pass
 
     # --------------------------------------------------------- ajustes
     def set_music_on(self, value):
@@ -253,12 +260,11 @@ class AudioManager:
 
     def set_music_volume(self, value):
         self.music_volume = round(max(0.0, min(1.0, value)), 2)
-        try:
-            pygame.mixer.music.set_volume(self.music_volume)
-        except Exception:
-            pass
-        for snd in self.music.values():
-            snd.set_volume(self.music_volume)
+        for snd in set(self.music.values()) | set(self._sound_cache.values()):
+            try:
+                snd.set_volume(self.music_volume)
+            except Exception:
+                pass
 
     def set_sfx_volume(self, value):
         self.sfx_volume = round(max(0.0, min(1.0, value)), 2)
