@@ -229,7 +229,9 @@ class QuickPanel:
 
     def handle(self, event, to_internal=None):
         if event.type == pygame.FINGERDOWN:
-            pos = (event.x * S.GAME_W, event.y * S.GAME_H)
+            w, h = pygame.display.get_surface().get_size()
+            pos = to_internal((event.x * w, event.y * h)) if to_internal \
+                else (event.x * S.GAME_W, event.y * S.GAME_H)
         elif event.type == pygame.MOUSEBUTTONDOWN:
             pos = to_internal(event.pos) if to_internal else event.pos
         else:

@@ -66,13 +66,15 @@ class TouchButton:
 
 
 def es_movil():
+    import os
+    if os.environ.get("PGB_WEB") == "1":
+        return True
     try:
         drv = (pygame.display.get_driver() or "").lower()
         if any(k in drv for k in ("android", "ios", "emscripten", "wasm", "web")):
             return True
     except Exception:
         pass
-    import os
     env = " ".join((k + "=" + v).lower() for k, v in os.environ.items())
     if any(k in env for k in ("pgs4a", "buildozer", "termux", "__android__", "android_")):
         return True
@@ -104,7 +106,12 @@ class TouchInput:
     def handle(self, event, to_internal):
         if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
             self.enabled = True
-            pos = (event.x * S.GAME_W, event.y * S.GAME_H)
+            try:
+                w, h = pygame.display.get_surface().get_size()
+                pos = to_internal((event.x * w, event.y * h)) if to_internal \
+                    else (event.x * S.GAME_W, event.y * S.GAME_H)
+            except Exception:
+                pos = (event.x * S.GAME_W, event.y * S.GAME_H)
             if event.type == pygame.FINGERUP:
                 self.fingers.pop(event.finger_id, None)
             else:

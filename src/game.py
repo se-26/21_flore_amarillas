@@ -328,16 +328,10 @@ class Game:
             return
         if event.type != pygame.KEYDOWN:
             return
-        if self.dialogue.active:
-            if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_e):
-                self.dialogue.advance()
-            return
         if event.key == pygame.K_ESCAPE:
             self.pause.index = 0
             self.prev_state = "play"
             self.state = "pause"
-        elif event.key in (pygame.K_e, pygame.K_RETURN):
-            self.interact()
         elif event.key == pygame.K_F5:
             self.save_game()
             self.notify("Partida guardada")
@@ -430,11 +424,15 @@ class Game:
         level, player, prog = self.level, self.player, self.progress
         talking = self.dialogue.active
         if talking:
+            if self.input.pressed("interact") or self.input.pressed("jump"):
+                self.dialogue.advance()
             player.vx = 0
             player._physics(dt, level)
             player._animate(dt)
             self.dialogue.update(dt)
         elif self.fade_state is None:
+            if self.input.pressed("interact") and self.interact_target:
+                self.interact()
             player.update(dt, level, self.input)
 
         level.update(dt, player, self.particles)
