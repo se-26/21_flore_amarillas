@@ -275,6 +275,8 @@ class Game:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
                 pygame.display.toggle_fullscreen()
                 continue
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                self.audio.inicializar_audio_navegador()
             self.input.handle_event(event, self.to_internal)
 
             st = self.state

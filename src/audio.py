@@ -6,6 +6,10 @@ Nunca falla por un archivo ausente.
 
 Musica y efectos siempre se reproducen con pygame.mixer.Sound (no
 mixer.music).
+
+En la version web (pygbag/emscripten) el navegador bloquea el sonido hasta
+que el usuario interactua: el mixer NO se abre al arrancar y se enciende al
+primer clic con inicializar_audio_navegador().
 """
 import os
 
@@ -90,12 +94,20 @@ class AudioManager:
         self._file_music = {}
         self._sound_cache = {}
         self.final_lock = None
+        self._pending_music = None
+        if not S.IS_WEB:
+            self._iniciar_audio()
+
+    # ------------------------------------------------------------ encendido
+    def _iniciar_audio(self):
+        """Abre el mixer y carga sonidos. En la web se llama al primer clic."""
         try:
-            pygame.mixer.init(SR, -16, 2, 512)
-            self.enabled = True
+            if not pygame.mixer.get_init():
+                pygame.mixer.init(SR, -16, 2, 512)
         except Exception:
-            self.enabled = False
+            print("El navegador bloque\u00f3 el audio temporalmente")
             return
+        self.enabled = True
         try:
             self._scan_files()
         except Exception:
@@ -105,6 +117,17 @@ class AudioManager:
                 self._synth()
             except Exception:
                 pass
+
+    def inicializar_audio_navegador(self):
+        """Activa el audio una vez el jugador hizo su primer clic (autoplay
+        de Chrome) y reanuda la musica del menu si quedo pendiente."""
+        if self.enabled:
+            return
+        self._iniciar_audio()
+        if self.enabled:
+            key, fade_ms = self._pending_music or ("exploration", 600)
+            self._pending_music = None
+            self.play_music(key, fade_ms=fade_ms, force=True)
 
     # ------------------------------------------------------------ carga
     def _scan_files(self):
@@ -208,6 +231,7 @@ class AudioManager:
     # ------------------------------------------------------------ musica
     def play_music(self, key, fade_ms=600, force=False):
         if not self.enabled:
+            self._pending_music = (key, fade_ms)
             return
         if self.final_lock and not force and key != self.final_lock:
             return

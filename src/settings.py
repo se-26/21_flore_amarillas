@@ -33,6 +33,20 @@ def _detect_mobile():
 
 IS_MOBILE = _detect_mobile()
 
+
+def _detect_web():
+    """True si corre dentro de un navegador (build pygbag/emscripten)."""
+    try:
+        if "emscripten" in str(getattr(sys, "platform", "")):
+            return True
+        import platform
+        return "Emscripten" in platform.system()
+    except Exception:
+        return False
+
+
+IS_WEB = _detect_web()
+
 # Resolucion interna pixel art (se escala a la ventana)
 GAME_W, GAME_H = 384, 216
 SCALE = 3
