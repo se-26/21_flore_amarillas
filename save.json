@@ -3,13 +3,13 @@
   "destinatario": "dama",
   "nivel_actual": 5,
   "nivel_desbloqueado": 6,
-  "flores_totales": 50,
+  "flores_totales": 97,
   "poder": true,
-  "muertes": 7,
+  "muertes": 3,
   "audio": {
     "musica": true,
     "efectos": true,
-    "volumen_musica": 0.7,
+    "volumen_musica": 0.8,
     "volumen_efectos": 1.0
   }
 }
