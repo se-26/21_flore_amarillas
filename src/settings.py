@@ -1,5 +1,6 @@
 """Constantes globales del juego: resolucion, paleta y rutas."""
 import os
+import sys
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
@@ -9,6 +10,28 @@ FONTS_DIR = os.path.join(ASSETS_DIR, "fonts")
 SPRITES_DIR = os.path.join(ASSETS_DIR, "sprites")
 SAVE_PATH = os.path.join(BASE_DIR, "save.json")
 CONFIG_PATH = os.path.join(BASE_DIR, "save.json")
+
+
+def _detect_mobile():
+    """True si corre en la web desde un celular ('emscripten' + userAgent)."""
+    try:
+        if "emscripten" in str(getattr(sys, "platform", "")):
+            return True
+        import platform
+        if "Emscripten" in platform.system():
+            return True
+    except Exception:
+        pass
+    try:
+        from browser import navigator
+        ua = (navigator.userAgent or "").lower()
+    except Exception:
+        ua = ""
+    return any(k in ua for k in ("mobile", "android", "iphone",
+                                 "ipad", "webos", "blackberry"))
+
+
+IS_MOBILE = _detect_mobile()
 
 # Resolucion interna pixel art (se escala a la ventana)
 GAME_W, GAME_H = 384, 216

@@ -1,13 +1,17 @@
 """21 de Septiembre: Flores para Ti.
 
 Punto de entrada. Ejecuta:  python main.py
+(tambien compatible con exportacion web via pygbag)
 """
+import asyncio
+
 from src.game import Game
 
 
-def main():
-    Game().run()
+async def main():
+    game = Game()
+    await game.run()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

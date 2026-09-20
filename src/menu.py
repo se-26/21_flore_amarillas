@@ -75,8 +75,13 @@ class ListMenu:
                 self.confirm()
             elif event.key == pygame.K_ESCAPE:
                 self.cancel()
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            pos = to_internal(event.pos) if to_internal else event.pos
+        elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
+            if event.type == pygame.FINGERDOWN:
+                w, h = pygame.display.get_surface().get_size()
+                pos = to_internal((event.x * w, event.y * h)) if to_internal \
+                    else (event.x * S.GAME_W, event.y * S.GAME_H)
+            else:
+                pos = to_internal(event.pos) if to_internal else event.pos
             for i, r in enumerate(self.rects):
                 if r.collidepoint(pos):
                     self.index = i
@@ -364,7 +369,7 @@ class ControlsScreen:
         self.game = game
 
     def handle(self, event, to_internal=None):
-        if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+        if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
             self.game.state = self.game.prev_state or "menu"
 
     def draw(self, surf):

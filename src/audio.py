@@ -94,10 +94,17 @@ class AudioManager:
             pygame.mixer.init(SR, -16, 2, 512)
             self.enabled = True
         except Exception:
+            self.enabled = False
             return
-        self._scan_files()
+        try:
+            self._scan_files()
+        except Exception:
+            pass
         if np is not None:
-            self._synth()
+            try:
+                self._synth()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------ carga
     def _scan_files(self):

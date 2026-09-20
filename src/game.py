@@ -1,4 +1,5 @@
 """Nucleo del juego de plataformas: estados, bucle y reglas."""
+import asyncio
 import math
 import random
 
@@ -296,13 +297,14 @@ class Game:
             elif st == "ending":
                 self.ending.handle(event, self.to_internal)
             elif st == "objective":
-                if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN,
+                                  pygame.FINGERDOWN):
                     self.objective.skip()
             elif st == "play":
                 self._play_event(event)
 
     def _play_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
+        if event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
             if self.quick.handle(event, self.to_internal):
                 return
             return
@@ -364,6 +366,9 @@ class Game:
             self.notice_t -= dt
 
         st = self.state
+        # Botones tactiles SOLO mientras se recorre el mundo: si hay un dialogo
+        # o caja de texto activo se ocultan para no tapar la lectura.
+        self.input.touch_active = (st == "play" and not self.dialogue.active)
         if st == "menu":
             self.menu.update(dt)
         elif st == "char_select":
@@ -623,11 +628,12 @@ class Game:
         pygame.display.flip()
 
     # -------------------------------------------------------------- bucle
-    def run(self):
+    async def run(self):
         while self.running:
             dt = min(0.05, self.clock.tick(S.FPS) / 1000.0)
             self.handle_events()
             self.update(dt)
             self.draw()
+            await asyncio.sleep(0)
         self.save_game()
         pygame.quit()
