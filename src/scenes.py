@@ -67,6 +67,8 @@ class FinalScene:
         self.petals = []
         self.bouquet_t = 0.0
         self.target_t = 0.0
+        self.zoom0 = 1.0
+        self.zoom_out_t = 0.0
 
     def update(self, dt):
         self.t += dt
@@ -93,8 +95,16 @@ class FinalScene:
             if self.bouquet_t > 1.6:
                 self.phase = 2
                 self.t = 0.0
+                self.zoom0 = self.game.zoom
+                self.zoom_out_t = 0.0
         else:
             p.vx = 0
+            if self.zoom_out_t < 0.55:
+                self.zoom_out_t += dt
+                k = min(1.0, self.zoom_out_t / 0.55)
+                self.game.zoom = 1.0 + (self.zoom0 - 1.0) * (1.0 - k)
+                if k >= 1.0:
+                    self.game.zoom = 1.0
             if random.random() < dt * 70:
                 cam = self.game.camera
                 self.petals.append([cam.x + random.uniform(0, S.GAME_W), cam.y - 6,
@@ -160,10 +170,8 @@ class EndingScreen(ListMenu):
         surf.blit(self.game.art.bouquet,
                   (S.GAME_W // 2 - 17, 26 + int(math.sin(self.t) * 2)))
         ui.title(surf, "FIN", (S.GAME_W // 2, 74), 26, S.CREAM)
-        ui.title(surf, "Gracias por regalar flores.", (S.GAME_W // 2, 104), 14, S.CREAM)
+        ui.title(surf, "juego creado por selena", (S.GAME_W // 2, 104), 14, S.CREAM)
         p = self.game.progress
         ui.text(surf, f"Flores totales: {p.total_flowers}    Caidas: {p.deaths}",
                 (S.GAME_W // 2, 126), 11, (110, 72, 40), shadow=None, center=True)
         self.draw_options(surf, 148, 22, 14, 180)
-        ui.text(surf, "juego creado por Selena",
-                (S.GAME_W // 2, 202), 12, (235, 40, 130), shadow=None, center=True)

@@ -485,7 +485,7 @@ def level_6():
     d = LevelData("jardin", 6, "EL JARDIN FINAL", "jardin",
                   ["Derrota al guardian del jardin.",
                    "Reune 10 flores y entrega el ramo."], 10,
-                  music="flores_amarillas_final", boss=True)
+                  music="final_theme", boss=True)
     b = Builder(d, 130, 22, 606)
     gy = 16
     b.ground(0, 40, gy)

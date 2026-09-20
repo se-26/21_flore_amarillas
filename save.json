@@ -1,11 +1,11 @@
 {
   "personaje": "flora",
   "destinatario": "dama",
-  "nivel_actual": 4,
+  "nivel_actual": 5,
   "nivel_desbloqueado": 6,
-  "flores_totales": 52,
+  "flores_totales": 141,
   "poder": true,
-  "muertes": 79,
+  "muertes": 11,
   "audio": {
     "musica": true,
     "efectos": true,
