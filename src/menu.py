@@ -6,6 +6,7 @@ import pygame
 
 from . import settings as S
 from . import ui
+from . import keys as K
 
 CONTROLS = [
     ("A / D  o  <  >", "Moverse"),
@@ -63,17 +64,17 @@ class ListMenu:
 
     def handle(self, event, to_internal=None):
         if event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_UP, pygame.K_w):
+            if event.key in (K.K_UP, K.K_w):
                 self.move(-1)
-            elif event.key in (pygame.K_DOWN, pygame.K_s):
+            elif event.key in (K.K_DOWN, K.K_s):
                 self.move(1)
-            elif event.key in (pygame.K_LEFT, pygame.K_a):
+            elif event.key in (K.K_LEFT, K.K_a):
                 self.on_side(-1)
-            elif event.key in (pygame.K_RIGHT, pygame.K_d):
+            elif event.key in (K.K_RIGHT, K.K_d):
                 self.on_side(1)
-            elif event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_e, pygame.K_x):
+            elif event.key in (K.K_RETURN, K.K_SPACE, K.K_e, K.K_x):
                 self.confirm()
-            elif event.key == pygame.K_ESCAPE:
+            elif event.key == K.K_ESCAPE:
                 self.cancel()
         elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
             if event.type == pygame.FINGERDOWN:

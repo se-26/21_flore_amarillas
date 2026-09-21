@@ -103,7 +103,8 @@ class AudioManager:
         """Abre el mixer y carga sonidos. En la web se llama al primer clic."""
         try:
             if not pygame.mixer.get_init():
-                pygame.mixer.init(SR, -16, 2, 512)
+                buffer = 4096 if S.IS_WEB else 512
+                pygame.mixer.init(SR, -16, 2, buffer)
         except Exception:
             print("El navegador bloque\u00f3 el audio temporalmente")
             return

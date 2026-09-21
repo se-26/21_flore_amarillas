@@ -6,6 +6,7 @@ import random
 import pygame
 
 from . import savegame, settings as S, ui
+from . import keys as K
 from .art import PlatformArt
 from .audio import AudioManager
 from .camera import Camera
@@ -27,12 +28,29 @@ TOTAL_LEVELS = 6
 
 class Game:
     def __init__(self):
-        pygame.mixer.pre_init(44100, -16, 2, 512)
-        pygame.init()
-        self.window = pygame.display.set_mode((S.GAME_W * S.SCALE, S.GAME_H * S.SCALE),
-                                              pygame.RESIZABLE)
-        pygame.display.set_caption(S.TITLE)
-        self.screen = pygame.Surface((S.GAME_W, S.GAME_H)).convert()
+        if S.IS_WEB:
+            # La build web de pygame-ce (pygbag) no exporta todas las
+            # constantes de escritorio (ej. pygame.K_a, pygame.RESIZABLE):
+            # se inicializa por subsistemas y la ventana se crea dentro del
+            # bucle asincrono con flags seguros (_init_display).
+            pygame.display.init()
+            pygame.font.init()
+            self.window = None
+            self.scale_rect = pygame.Rect(0, 0,
+                                          S.GAME_W * S.SCALE, S.GAME_H * S.SCALE)
+        else:
+            pygame.mixer.pre_init(44100, -16, 2, 512)
+            pygame.init()
+            self.window = pygame.display.set_mode(
+                (S.GAME_W * S.SCALE, S.GAME_H * S.SCALE), pygame.RESIZABLE)
+            pygame.display.set_caption(S.TITLE)
+            self.scale_rect = self.window.get_rect()
+        self.screen = pygame.Surface((S.GAME_W, S.GAME_H))
+        if not S.IS_WEB:
+            try:
+                self.screen = self.screen.convert()
+            except pygame.error:
+                pass
         self.clock = pygame.time.Clock()
         self.running = True
 
@@ -79,7 +97,8 @@ class Game:
         self.tension_t = 0.0
         self.level_done = False
         self.interact_target = None
-        self.scale_rect = self.window.get_rect()
+        if self.window is not None:
+            self.scale_rect = self.window.get_rect()
         self.zoom = 1.0
 
         data = savegame.load()
@@ -88,6 +107,22 @@ class Game:
         self.audio.play_music("exploration")
 
     # ------------------------------------------------------------ utiles
+    def _init_display(self):
+        """Crea la ventana Pygame.
+
+        En web se llama desde run() ya dentro del bucle asincrono, despues
+        de ceder unas cuantas veces para que el runtime de pygbag (el
+        window_resize() del template) deje el canvas listo. Se usa `0` como
+        flags porque pygame.RESIZABLE no esta disponible en la build web.
+        """
+        if self.window is not None:
+            return
+        flags = 0 if S.IS_WEB else pygame.RESIZABLE
+        self.window = pygame.display.set_mode(
+            (S.GAME_W * S.SCALE, S.GAME_H * S.SCALE), flags)
+        pygame.display.set_caption(S.TITLE)
+        self.scale_rect = self.window.get_rect()
+
     def notify(self, msg, seconds=3.0):
         self.notice = msg
         self.notice_t = seconds
@@ -269,16 +304,19 @@ class Game:
                 self.running = False
                 continue
             if event.type == pygame.VIDEORESIZE:
+                if S.IS_WEB:
+                    continue
                 self.window = pygame.display.set_mode((event.w, event.h),
                                                       pygame.RESIZABLE)
                 continue
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
+            if event.type == pygame.KEYDOWN and event.key == K.K_F11:
                 try:
                     pygame.display.toggle_fullscreen()
                 except pygame.error:
                     pass
                 continue
-            if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN,
+                              pygame.KEYDOWN):
                 self.audio.inicializar_audio_navegador()
             self.input.handle_event(event, self.to_internal)
 
@@ -312,14 +350,28 @@ class Game:
         if event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
             if self.quick.handle(event, self.to_internal):
                 return
+            # boton "continuar" del dialogo (mouse / touch)
+            if self.dialogue.active:
+                pos = None
+                try:
+                    if event.type == pygame.FINGERDOWN:
+                        w, h = pygame.display.get_surface().get_size()
+                        pos = self.to_internal((event.x * w, event.y * h))
+                    else:
+                        pos = self.to_internal(event.pos)
+                except Exception:
+                    pos = None
+                if pos and self.dialogue.button_rect().collidepoint(pos):
+                    self.dialogue.advance()
+                    return
             return
         if event.type != pygame.KEYDOWN:
             return
-        if event.key == pygame.K_ESCAPE:
+        if event.key == K.K_ESCAPE:
             self.pause.index = 0
             self.prev_state = "play"
             self.state = "pause"
-        elif event.key == pygame.K_F5:
+        elif event.key == K.K_F5:
             self.save_game()
             self.notify("Partida guardada")
 
@@ -374,6 +426,11 @@ class Game:
         # Botones tactiles SOLO mientras se recorre el mundo: si hay un dialogo
         # o caja de texto activo se ocultan para no tapar la lectura.
         self.input.touch_active = (st == "play" and not self.dialogue.active)
+        # el boton de flor solo aparece con el poder desbloqueado, y el de
+        # interactuar solo cuando hay algo cerca.
+        self.input.set_power(st == "play" and self.progress.power)
+        self.input.set_interact(st == "play" and self.interact_target is not None
+                                and not self.dialogue.active)
         if st == "menu":
             self.menu.update(dt)
         elif st == "char_select":
@@ -598,7 +655,13 @@ class Game:
         if self.notice_t > 0:
             font = ui.get_font(12)
             r = pygame.Rect(0, 0, min(S.GAME_W - 20, font.size(self.notice)[0] + 22), 20)
-            r.midtop = (S.GAME_W // 2, 46)
+            # En el menu de inicio el aviso (ej. "No hay progreso guardado
+            # todavia") se muestra debajo de los botones para no tapar el
+            # titulo "FLORES PARA TI"; en el resto de estados se mantiene arriba.
+            if st == "menu":
+                r.midtop = (S.GAME_W // 2, 180)
+            else:
+                r.midtop = (S.GAME_W // 2, 46)
             alpha = 255 if self.notice_t > 0.6 else int(self.notice_t * 420)
             ui.panel(surf, r, fill=(36, 30, 48), alpha=min(232, alpha), shadow=False)
             ui.text(surf, self.notice, (r.centerx, r.y + 4), 12, S.GOLD, center=True)
@@ -634,6 +697,12 @@ class Game:
 
     # -------------------------------------------------------------- bucle
     async def run(self):
+        if S.IS_WEB:
+            # dejar que el runtime de pygbag termine de ubicar el canvas
+            # (custom_site -> window_resize) antes de crear la ventana.
+            for _ in range(4):
+                await asyncio.sleep(0)
+        self._init_display()
         while self.running:
             dt = min(0.05, self.clock.tick(S.FPS) / 1000.0)
             self.handle_events()

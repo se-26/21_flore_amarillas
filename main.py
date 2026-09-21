@@ -5,6 +5,8 @@ Punto de entrada. Ejecuta:  python main.py
 """
 import asyncio
 
+import pygame
+
 from src.game import Game
 
 

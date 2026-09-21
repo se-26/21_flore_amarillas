@@ -12,18 +12,19 @@ import pygame
 
 from . import settings as S
 from . import ui
+from . import keys as K
 
 ACTIONS = ("left", "right", "up", "down", "jump", "attack", "interact", "pause")
 
 KEYMAP = {
-    "left": (pygame.K_a, pygame.K_LEFT),
-    "right": (pygame.K_d, pygame.K_RIGHT),
-    "up": (pygame.K_w, pygame.K_UP),
-    "down": (pygame.K_s, pygame.K_DOWN),
-    "jump": (pygame.K_SPACE, pygame.K_w, pygame.K_UP, pygame.K_z),
-    "attack": (pygame.K_x, pygame.K_j),
-    "interact": (pygame.K_e, pygame.K_RETURN),
-    "pause": (pygame.K_ESCAPE,),
+    "left": (K.K_a, K.K_LEFT),
+    "right": (K.K_d, K.K_RIGHT),
+    "up": (K.K_w, K.K_UP),
+    "down": (K.K_s, K.K_DOWN),
+    "jump": (K.K_SPACE, K.K_w, K.K_UP, K.K_z),
+    "attack": (K.K_x, K.K_j),
+    "interact": (K.K_e, K.K_RETURN),
+    "pause": (K.K_ESCAPE,),
 }
 
 
@@ -39,57 +40,131 @@ class KeyboardInput:
 
 
 class TouchButton:
-    """Boton virtual semi-transparente estilo pixel art."""
+    """Boton virtual semi-transparente estilo pixel art magico.
 
-    def __init__(self, action, rect, label):
+    Marco pixel art con esquinas redondeadas, sombra suave y acento amarillo;
+    al presionarlo se ilumina, cambia el icono de color y "rebota" hacia
+    abajo. Los iconos son simples (flechas, flor) y el texto es minimo.
+    """
+
+    def __init__(self, action, rect, label, caption=""):
         self.action = action
         self.rect = pygame.Rect(rect)
         self.label = label
+        self.caption = caption
         self.pressed = False
+        self.enabled = True
+
+    def _icon(self, surf, cx, cy, main, outline):
+        """Dibuja el icono del boton centrado en (cx, cy)."""
+        if self.label == "<":
+            pygame.draw.polygon(surf, main, [(cx - 3, cy - 7), (cx - 3, cy + 7), (cx - 10, cy)])
+            pygame.draw.polygon(surf, outline, [(cx - 3, cy - 7), (cx - 3, cy + 7), (cx - 10, cy)], 1)
+        elif self.label == ">":
+            pygame.draw.polygon(surf, main, [(cx + 3, cy - 7), (cx + 3, cy + 7), (cx + 10, cy)])
+            pygame.draw.polygon(surf, outline, [(cx + 3, cy - 7), (cx + 3, cy + 7), (cx + 10, cy)], 1)
+        elif self.label == "^":
+            pygame.draw.polygon(surf, main, [(cx, cy - 9), (cx - 9, cy + 1), (cx + 9, cy + 1)])
+            pygame.draw.polygon(surf, outline,
+                                [(cx, cy - 9), (cx - 9, cy + 1), (cx + 9, cy + 1)], 1)
+            pygame.draw.rect(surf, main, (cx - 2, cy + 1, 4, 5))
+            pygame.draw.rect(surf, outline, (cx - 2, cy + 1, 4, 5), 1)
+        elif self.label == "v":
+            pygame.draw.polygon(surf, main, [(cx - 9, cy - 1), (cx + 9, cy - 1), (cx, cy + 8)])
+            pygame.draw.polygon(surf, outline,
+                                [(cx - 9, cy - 1), (cx + 9, cy - 1), (cx, cy + 8)], 1)
+            pygame.draw.rect(surf, main, (cx - 2, cy - 7, 4, 6))
+            pygame.draw.rect(surf, outline, (cx - 2, cy - 7, 4, 6), 1)
+        elif self.label == "FLOR":
+            # florecilla amarilla pixel art: 4 petalos + corazon + tallo
+            pygame.draw.rect(surf, S.YELLOW, (cx - 6, cy - 7, 5, 5))
+            pygame.draw.rect(surf, S.YELLOW, (cx + 1, cy - 7, 5, 5))
+            pygame.draw.rect(surf, S.YELLOW, (cx - 6, cy + 2, 5, 5))
+            pygame.draw.rect(surf, S.YELLOW, (cx + 1, cy + 2, 5, 5))
+            pygame.draw.rect(surf, S.ORANGE, (cx - 2, cy - 2, 4, 4))
+            pygame.draw.rect(surf, S.GREEN, (cx - 1, cy + 7, 3, 6))
+        elif self.label == "E":
+            ui.text(surf, "E", (cx, cy - 4), 11, main, shadow=None, center=True)
 
     def draw(self, surf):
-        alpha = 120 if not self.pressed else 210
-        pad = pygame.Surface(self.rect.size, pygame.SRCALPHA)
-        r = pad.get_rect()
-        base = (250, 244, 220, alpha)
-        edge = (60, 48, 60, min(255, alpha + 40))
-        pygame.draw.rect(pad, edge, r, border_radius=6)
-        pygame.draw.rect(pad, base, r.inflate(-4, -4), border_radius=5)
-        pygame.draw.rect(pad, (255, 214, 74, alpha), r.inflate(-4, -4),
-                         1, border_radius=5)
-        surf.blit(pad, self.rect.topleft)
-        cx, cy = self.rect.center
-        col = (48, 40, 52)
-        if self.label == "<":
-            pygame.draw.polygon(surf, col, [(cx + 5, cy - 7), (cx + 5, cy + 7), (cx - 6, cy)])
-        elif self.label == ">":
-            pygame.draw.polygon(surf, col, [(cx - 5, cy - 7), (cx - 5, cy + 7), (cx + 6, cy)])
-        elif self.label == "^":
-            pygame.draw.polygon(surf, col, [(cx - 7, cy + 5), (cx + 7, cy + 5), (cx, cy - 6)])
-        elif self.label == "v":
-            pygame.draw.polygon(surf, col, [(cx - 7, cy - 5), (cx + 7, cy - 5), (cx, cy + 6)])
+        if not self.enabled:
+            return
+        r = self.rect
+        pressed = self.pressed
+        pad = pygame.Surface(r.size, pygame.SRCALPHA)
+        box = pad.get_rect()
+
+        pygame.draw.rect(pad, (18, 14, 24, 80), box.move(2, 3), border_radius=12)
+
+        if pressed:
+            fill = (88, 62, 78, 224)
+            edge = (255, 236, 160, 255)
+            inner = (255, 250, 220, 255)
+            main = (46, 38, 54)
+            outline = (255, 244, 214)
         else:
-            ui.text(surf, self.label, (cx, cy - 7), 10, col, shadow=None, center=True)
+            fill = (52, 42, 62, 128)
+            edge = (255, 238, 150, 190)
+            inner = (255, 214, 74, 120)
+            main = (255, 244, 214)
+            outline = (46, 38, 54)
+
+        pygame.draw.rect(pad, edge, box, border_radius=12)
+        pygame.draw.rect(pad, fill, box.inflate(-3, -3), border_radius=10)
+        pygame.draw.rect(pad, inner, box.inflate(-3, -3), 2, border_radius=10)
+        pygame.draw.line(pad, (255, 250, 230, 120 if not pressed else 220),
+                         (4, 4), (r.w - 5, 4))
+        surf.blit(pad, r.topleft)
+
+        cx, cy = r.center
+        if pressed:
+            cy += 2
+        self._icon(surf, cx, cy, main, outline)
+        if self.caption:
+            ui.text(surf, self.caption, (int(cx), int(r.bottom - 7)), 9,
+                    (255, 214, 74) if pressed else (226, 206, 168),
+                    center=True, alpha=240)
 
 
 class TouchInput:
     """Botones tactiles de las esquinas inferiores (pantalla horizontal).
 
-    Solo se dibujan y quedan activos con set_visible(True), que el juego
-    activa cada frame mientras el jugador recorre el mundo sin dialogos.
+    Izquierda: flechas de movimiento. Derecha: SALTO (grande), AGACHARSE y
+    FLOR/ataque. El boton de flor solo aparece cuando el poder de lanzar
+    flores esta desbloqueado; el de interactuar solo cuando hay algo que
+    desencadenar. Se dibujan y quedan activos con set_visible(True), que el
+    juego activa cada frame mientras el jugador recorre el mundo sin dialogos.
     """
 
     def __init__(self, enabled):
         self.enabled = enabled or os.environ.get("TOUCH_TEST") == "1"
-        h = S.GAME_H
+        w, h = S.GAME_W, S.GAME_H
+        m = 12
+        size = int(h * 0.26)          # boton estandar
+        gap = max(8, int(size * 0.16))
+        jsize = int(h * 0.30)         # boton de salto, el mas grande
+        csize = int(h * 0.23)         # agacharse / interactuar, compactos
+        asize = int(h * 0.26)         # ataque / flor
+
         self.buttons = [
-            TouchButton("left", (8, h - 46, 34, 34), "<"),
-            TouchButton("right", (48, h - 46, 34, 34), ">"),
-            TouchButton("jump", (10, h - 88, 34, 34), "^"),
-            TouchButton("attack", (S.GAME_W - 96, h - 46, 40, 36), "FLOR"),
-            TouchButton("down", (S.GAME_W - 52, h - 88, 36, 32), "v"),
-            TouchButton("interact", (S.GAME_W - 136, h - 88, 38, 32), "E"),
+            TouchButton("left", (m, h - m - size, size, size), "<"),
+            TouchButton("right", (m + size + gap, h - m - size, size, size), ">"),
+            TouchButton("jump", (w - m - jsize, h - m - jsize, jsize, jsize),
+                        "^", "SALTO"),
+            TouchButton("down", (w - m - jsize + int(jsize * 0.18),
+                                 h - m - jsize - csize - int(gap * 0.7),
+                                 csize, csize), "v", "AGACH."),
         ]
+        self.attack = TouchButton(
+            "attack", (w - m - jsize - asize - gap,
+                       h - m - jsize + int((jsize - asize) // 2),
+                       asize, asize), "FLOR", "FLOR")
+        self.interact = TouchButton(
+            "interact", (w - m - jsize - asize - int(gap * 1.5),
+                         h - m - jsize - csize - int(gap * 0.7) - 2,
+                         csize, csize), "E")
+        self.attack.enabled = False
+        self.buttons += (self.attack, self.interact)
         self.fingers = {}
         self.visible = False
 
@@ -102,9 +177,21 @@ class TouchInput:
             for b in self.buttons:
                 b.pressed = False
 
+    def set_power(self, on):
+        """Muestra/oculta el boton FLOR cuando se desbloquea el poder."""
+        if not self.enabled:
+            return
+        self.attack.enabled = bool(on)
+
+    def set_interact(self, on):
+        """Muestra el boton de interactuar solo cuando hay algo cerca."""
+        if not self.enabled:
+            return
+        self.interact.enabled = bool(on)
+
     def _hit(self, pos):
         for b in self.buttons:
-            if b.rect.collidepoint(pos):
+            if b.enabled and b.rect.collidepoint(pos):
                 return b
         return None
 
@@ -165,6 +252,12 @@ class InputManager:
 
     def handle_event(self, event, to_internal):
         self.touch.handle(event, to_internal)
+
+    def set_power(self, on):
+        self.touch.set_power(on)
+
+    def set_interact(self, on):
+        self.touch.set_interact(on)
 
     def update(self):
         self.prev = dict(self.state)

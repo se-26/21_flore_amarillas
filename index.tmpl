@@ -1,4 +1,4 @@
-<html lang="en-us"><script src="{{cookiecutter.cdn}}pythons.js" type=module id="site" data-python="python{{cookiecutter.PYBUILD}}" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
+<html lang="en-us"><script>/* pygbag 0.9.3 asume que http://localhost:8xxx tiene un espejo local de /cdn/ (su propio servidor de pruebas). Con un servidor estatico normal (python -m http.server) ese /cdn/ no existe y los wheels de pygame fallan con "INVALID pygame". Redirigimos localhost -> 127.0.0.1 para que el runtime baje los wheels del CDN oficial de pygame-web. En GitHub Pages (host no localhost) esta linea no se dispara. */ if(location.hostname==="localhost"){location.replace(location.protocol+"//127.0.0.1:"+location.port+location.pathname+location.search+location.hash);}</script><script src="{{cookiecutter.cdn}}pythons.js" type=module id="site" data-python="python{{cookiecutter.PYBUILD}}" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
 
 print("""
 Loading {{cookiecutter.title}} from {{cookiecutter.archive}}.apk
@@ -63,7 +63,9 @@ async def custom_site():
     # before a gesture is recorded ( touch or click )
 
     # test/wait user media interaction
-    if not platform.window.MM.UME:
+    # MM.UME may still be true here (feat_snd runs after the python site
+    # starts), so also require a real gesture seen by window.game_user_acked.
+    if not (platform.window.MM.UME or platform.window.game_user_acked):
 
         # now that apk is mounted we have access to font cache
         # but we need to fill __file__ that is not yet set
@@ -74,7 +76,7 @@ async def custom_site():
         platform.window.infobox.innerText = msg
         print("\n"*4, f"    * Waiting for media user engagement. {msg} *" , "\n"*4)
 
-        while not platform.window.MM.UME:
+        while not (platform.window.MM.UME or platform.window.game_user_acked):
             await asyncio.sleep(.1)
 
     # start async top level machinery if not started and add a console in any case if requested.
@@ -83,6 +85,12 @@ async def custom_site():
     # now that apk is mounted we have access to font cache
     # but we need to fill __file__/__name__ that are not yet set
     __import__(__name__).__file__ = main
+
+
+    # make sure the canvas/window has its final CSS size BEFORE the game calls
+    # pygame.display.set_mode() (otherwise SDL can pick a 1x1 backing store).
+    platform.window.config.gui_divider = 1
+    platform.window.window_resize()
 
 
     def ui_callback(pkg):
@@ -94,7 +102,6 @@ async def custom_site():
     # your main.py has an infinite sync loop somewhere !
 
     platform.window.infobox.style.display = "none"
-    platform.window.config.gui_divider = 1
     platform.window.window_resize()
     print("default.tmpl: done")
 
@@ -160,6 +167,45 @@ config = {
     fb_width : "{{cookiecutter.width}}",
     fb_height : "{{cookiecutter.height}}"
 }
+
+// a real user gesture (click/touch/key) makes media usable; record it before
+// python main starts so custom_site can wait reliably for it (no audio race).
+window.game_user_acked = false
+window.addEventListener("pointerdown", () => { window.game_user_acked = true }, { once : true })
+window.addEventListener("keydown",     () => { window.game_user_acked = true }, { once : true })
+
+// Primer gesto real del jugador (el mismo que activa el audio):
+//  * PC/escritorio  -> pantalla completa (Fullscreen API, fallback silencioso).
+//  * Celular/táctil  -> orientacion horizontal si la API esta disponible
+//                       (fallback silencioso; "#rotate-hint" avisa en vertical).
+// Nunca cambia la resolucion interna ni bloquea el arranque del juego.
+function apply_view_reqs() {
+    var coarse  = (navigator.maxTouchPoints > 0) ||
+                  (window.matchMedia && matchMedia("(pointer: coarse)").matches);
+    var android = /Android/i.test(navigator.userAgent || "");
+
+    // Movil: pedir landscape si existe screen.orientation.lock.
+    if (coarse && screen.orientation && typeof screen.orientation.lock === "function") {
+        try {
+            var lp = screen.orientation.lock("landscape");
+            if (lp && typeof lp.catch === "function") lp.catch(function () {});
+        } catch (e) {}
+    }
+
+    // Escritorio (y Android, necesario ademas para que valide el lock
+    // landscape): entrar en pantalla completa con la Fullscreen API.
+    var wantFS = !coarse || android;
+    if (wantFS && document.documentElement &&
+        typeof document.documentElement.requestFullscreen === "function" &&
+        !document.fullscreenElement) {
+        try {
+            var fp = document.documentElement.requestFullscreen();
+            if (fp && typeof fp.catch === "function") fp.catch(function () {});
+        } catch (e) {}
+    }
+}
+window.addEventListener("pointerdown", apply_view_reqs, { once : true })
+window.addEventListener("keydown",     apply_view_reqs, { once : true })
 
 function show_infobox() {
     infobox.style.display = "block";
@@ -234,6 +280,10 @@ function show_infobox() {
             bottom: 0;
             left: 0;
             right: 0;
+
+            /* pixel art nítido al escalar a pantalla completa/landscape */
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
         }
 
         body {
@@ -289,7 +339,9 @@ function show_infobox() {
             color: #ffffff;
             font: bold 26px/1.6 arial, sans-serif;
         }
-        @media (orientation: portrait) {
+        /* Solo en dispositivos tactiles (un escritorio con ventana vertical
+           no debe ver el aviso de giro). */
+        @media screen and (orientation: portrait) and (pointer: coarse) {
             #rotate-hint { display: flex; }
             body { overflow: hidden; }
         }
@@ -405,7 +457,7 @@ frameborder="1"
         // make your js customization here
         console.log(__FILE__, "custom_onload")
 
-        pyconsole.hidden = debug_hidden
+        pyconsole.hidden = true
         system.hidden = debug_hidden
         transfer.hidden = debug_hidden
         info.hidden = debug_hidden

@@ -59,10 +59,18 @@ class DialogueSystem:
         if not self.finished_page():
             self.revealed += CHARS_PER_SEC * dt
 
+    def _box(self):
+        return pygame.Rect(14, S.GAME_H - 74, S.GAME_W - 28, 62)
+
+    def button_rect(self):
+        """Boton 'continuar' (flecha/FIN) en la esquina inferior derecha."""
+        box = self._box()
+        return pygame.Rect(box.right - 38, box.bottom - 27, 26, 22)
+
     def draw(self, surf):
         if not self.active:
             return
-        box = pygame.Rect(14, S.GAME_H - 74, S.GAME_W - 28, 62)
+        box = self._box()
         ui.panel(surf, box, fill=(40, 34, 54), alpha=238)
 
         tx = box.x + 10
@@ -71,16 +79,30 @@ class DialogueSystem:
             ui.panel(surf, tag, fill=(70, 52, 42), alpha=245, accent=S.YELLOW)
             ui.text(surf, self.name, (tag.centerx, tag.y + 2), 12, S.GOLD, center=True)
 
+        # deja espacio libre para el boton ▶ de la esquina inferior derecha
         shown = self.current[:int(self.revealed)]
-        lines = ui.wrap(shown, 12, box.w - 28)
+        lines = ui.wrap(shown, 12, box.w - 52)
         for i, line in enumerate(lines[:3]):
             ui.text(surf, line, (tx, box.y + 13 + i * 15), 12, S.CREAM)
 
         if self.finished_page():
             import math
-            off = int(math.sin(self.arrow_t) * 1.5)
-            ax, ay = box.right - 14, box.bottom - 13 + off
-            pygame.draw.polygon(surf, S.YELLOW,
-                                [(ax, ay), (ax + 7, ay), (ax + 3, ay + 5)])
-            pygame.draw.polygon(surf, S.DARK,
-                                [(ax, ay), (ax + 7, ay), (ax + 3, ay + 5)], 1)
+            br = self.button_rect()
+            last = self.index >= len(self.pages) - 1
+            pulse = int(210 + 45 * math.sin(self.arrow_t))
+            pad = pygame.Surface(br.size, pygame.SRCALPHA)
+            rb = pad.get_rect()
+            pygame.draw.rect(pad, (18, 14, 24, 110), rb.move(1, 2), border_radius=9)
+            accent = S.ORANGE if last else S.YELLOW
+            pygame.draw.rect(pad, (*accent, 255), rb, border_radius=9)
+            pygame.draw.rect(pad, (56, 44, 66, pulse), rb.inflate(-2, -2), border_radius=8)
+            surf.blit(pad, br.topleft)
+            if last:
+                ui.text(surf, "FIN", (br.centerx, br.centery - 5), 9, S.GOLD,
+                        center=True, alpha=pulse)
+            else:
+                cx, cy = br.centerx, br.centery
+                pygame.draw.polygon(surf, (255, 244, 214),
+                                    [(cx - 4, cy - 6), (cx - 4, cy + 6), (cx + 5, cy)])
+                pygame.draw.polygon(surf, S.YELLOW,
+                                    [(cx - 4, cy - 6), (cx - 4, cy + 6), (cx + 5, cy)], 1)

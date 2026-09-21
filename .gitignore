@@ -1,0 +1,15 @@
+# Entorno local / caches de Python (no publicar)
+venv312/
+__pycache__/
+*.pyc
+*.pyo
+
+# Backup y pruebas locales
+backup_pre_audio_fix/
+prueba_pygbag/
+
+# Artefactos de build generados (los publicables estan en la raiz y build/web/ y SI se versionan)
+build/version.txt
+build/web-cache/
+build/web.zip
+build/web/21_septiembre_game.html

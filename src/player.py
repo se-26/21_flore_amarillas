@@ -2,6 +2,7 @@
 import pygame
 
 from . import settings as S
+from . import keys as K
 
 
 class Player:
@@ -173,7 +174,7 @@ class Player:
             self.facing = 1
 
         keys = pygame.key.get_pressed()
-        running = keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
+        running = keys[K.K_LSHIFT] or keys[K.K_RSHIFT]
         speed = S.CROUCH_SPEED if self.crouching else (
             S.RUN_SPEED if running else S.WALK_SPEED)
         accel = S.ACCEL if self.on_ground else S.AIR_ACCEL
