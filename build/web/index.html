@@ -273,6 +273,26 @@ function show_infobox() {
            right: 10px;
            border: 1px solid black;
         }
+
+        /* Movil: requiere orientacion horizontal, aviso cuando esta en vertical */
+        #rotate-hint {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 1000000;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 32px;
+            box-sizing: border-box;
+            background: #7f7f7f;
+            color: #ffffff;
+            font: bold 26px/1.6 arial, sans-serif;
+        }
+        @media (orientation: portrait) {
+            #rotate-hint { display: flex; }
+            body { overflow: hidden; }
+        }
     </style>
 
     <script>
@@ -284,7 +304,8 @@ function show_infobox() {
 */
     </script>
 
-    <script src="https://pygame-web.github.io/cdn/0.9.3//browserfs.min.js"></script>
+    <!-- BrowserFS no esta disponible en el CDN 0.9.3 (404) y solo hacia falta para
+         tracks tipo "mount", que no se usan aqui. Mas info: pygame-web/pygbag#227 -->
 
 </head>
 
@@ -313,6 +334,8 @@ height="720px"
     </canvas>
 
     <div id="infobox">Loading, please wait ...</div>
+
+    <div id="rotate-hint">Gira tu dispositivo para jugar<br>Rotate your device to play</div>
 
     <div id=html></div>
 

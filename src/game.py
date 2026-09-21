@@ -273,7 +273,10 @@ class Game:
                                                       pygame.RESIZABLE)
                 continue
             if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
-                pygame.display.toggle_fullscreen()
+                try:
+                    pygame.display.toggle_fullscreen()
+                except pygame.error:
+                    pass
                 continue
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self.audio.inicializar_audio_navegador()
