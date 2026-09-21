@@ -6,6 +6,25 @@ import pygame
 from . import settings as S
 
 
+def _flower_glow():
+    """Brillo amarillo de las flores, creado una sola vez y compartido."""
+    g = pygame.Surface((22, 22), pygame.SRCALPHA)
+    pygame.draw.circle(g, (255, 232, 140, 40), (11, 11), 8)
+    return g
+
+
+def _sunflower_glow():
+    """Brillo de los girasoles, creado una sola vez y compartido."""
+    g = pygame.Surface((44, 44), pygame.SRCALPHA)
+    pygame.draw.circle(g, (255, 226, 120, 52), (22, 22), 16)
+    pygame.draw.circle(g, (255, 240, 170, 40), (22, 22), 10)
+    return g
+
+
+_FLOWER_GLOW = None
+_SUNFLOWER_GLOW = None
+
+
 class Flower:
     """Flor amarilla recolectable: flota, brilla y suelta particulas."""
 
@@ -25,10 +44,12 @@ class Flower:
     def draw(self, surf, camera):
         if self.taken:
             return
+        global _FLOWER_GLOW
+        if _FLOWER_GLOW is None:
+            _FLOWER_GLOW = _flower_glow()
         img = self.frames[int(self.t * 2) % len(self.frames)]
-        glow = pygame.Surface((22, 22), pygame.SRCALPHA)
-        pygame.draw.circle(glow, (255, 232, 140, 40), (11, 11), 8)
-        surf.blit(glow, camera.to_screen(self.rect.centerx - 11, self.rect.centery - 11))
+        surf.blit(_FLOWER_GLOW,
+                  camera.to_screen(self.rect.centerx - 11, self.rect.centery - 11))
         surf.blit(img, camera.to_screen(self.rect.x, self.rect.y))
 
 
@@ -51,11 +72,11 @@ class Sunflower:
     def draw(self, surf, camera):
         img = self.frames[int(self.t) % len(self.frames)]
         if not self.used:
-            glow = pygame.Surface((44, 44), pygame.SRCALPHA)
-            pygame.draw.circle(glow, (255, 226, 120, 52), (22, 22), 16)
-            pygame.draw.circle(glow, (255, 240, 170, 40), (22, 22), 10)
-            surf.blit(glow, camera.to_screen(self.rect.centerx - 22,
-                                             self.rect.centery - 24))
+            global _SUNFLOWER_GLOW
+            if _SUNFLOWER_GLOW is None:
+                _SUNFLOWER_GLOW = _sunflower_glow()
+            surf.blit(_SUNFLOWER_GLOW, camera.to_screen(self.rect.centerx - 22,
+                                                        self.rect.centery - 24))
         else:
             img = img.copy()
             img.set_alpha(150)

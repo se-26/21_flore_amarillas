@@ -54,6 +54,8 @@ class TouchButton:
         self.caption = caption
         self.pressed = False
         self.enabled = True
+        self._pad_idle = None
+        self._pad_pressed = None
 
     def _icon(self, surf, cx, cy, main, outline):
         """Dibuja el icono del boton centrado en (cx, cy)."""
@@ -86,39 +88,53 @@ class TouchButton:
         elif self.label == "E":
             ui.text(surf, "E", (cx, cy - 4), 11, main, shadow=None, center=True)
 
+    def _build_pads(self):
+        """Pre-renderiza el marco del boton (reposo y presionado) una vez."""
+        r = self.rect
+
+        def make(pressed):
+            pad = pygame.Surface(r.size, pygame.SRCALPHA)
+            box = pad.get_rect()
+            if pressed:
+                fill = (88, 62, 78, 224)
+                edge = (255, 236, 160, 255)
+                inner = (255, 250, 220, 255)
+            else:
+                fill = (52, 42, 62, 128)
+                edge = (255, 238, 150, 190)
+                inner = (255, 214, 74, 120)
+            pygame.draw.rect(pad, (18, 14, 24, 80), box.move(2, 3), border_radius=12)
+            pygame.draw.rect(pad, edge, box, border_radius=12)
+            pygame.draw.rect(pad, fill, box.inflate(-3, -3), border_radius=10)
+            pygame.draw.rect(pad, inner, box.inflate(-3, -3), 2, border_radius=10)
+            pygame.draw.line(pad, (255, 250, 230, 120 if not pressed else 220),
+                             (4, 4), (r.w - 5, 4))
+            return pad
+
+        if self._pad_idle is None:
+            self._pad_idle = make(False)
+        if self._pad_pressed is None:
+            self._pad_pressed = make(True)
+
     def draw(self, surf):
         if not self.enabled:
             return
         r = self.rect
         pressed = self.pressed
-        pad = pygame.Surface(r.size, pygame.SRCALPHA)
-        box = pad.get_rect()
-
-        pygame.draw.rect(pad, (18, 14, 24, 80), box.move(2, 3), border_radius=12)
-
-        if pressed:
-            fill = (88, 62, 78, 224)
-            edge = (255, 236, 160, 255)
-            inner = (255, 250, 220, 255)
-            main = (46, 38, 54)
-            outline = (255, 244, 214)
-        else:
-            fill = (52, 42, 62, 128)
-            edge = (255, 238, 150, 190)
-            inner = (255, 214, 74, 120)
-            main = (255, 244, 214)
-            outline = (46, 38, 54)
-
-        pygame.draw.rect(pad, edge, box, border_radius=12)
-        pygame.draw.rect(pad, fill, box.inflate(-3, -3), border_radius=10)
-        pygame.draw.rect(pad, inner, box.inflate(-3, -3), 2, border_radius=10)
-        pygame.draw.line(pad, (255, 250, 230, 120 if not pressed else 220),
-                         (4, 4), (r.w - 5, 4))
+        if self._pad_idle is None or self._pad_pressed is None:
+            self._build_pads()
+        pad = self._pad_pressed if pressed else self._pad_idle
         surf.blit(pad, r.topleft)
 
         cx, cy = r.center
         if pressed:
             cy += 2
+        if pressed:
+            main = (46, 38, 54)
+            outline = (255, 244, 214)
+        else:
+            main = (255, 244, 214)
+            outline = (46, 38, 54)
         self._icon(surf, cx, cy, main, outline)
         if self.caption:
             ui.text(surf, self.caption, (int(cx), int(r.bottom - 7)), 9,

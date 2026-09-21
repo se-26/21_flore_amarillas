@@ -11,24 +11,39 @@ _FONTS = {}
 # Capa de texto en alta resolucion: reescala el texto a la resolucion real de
 # la ventana y lo superpone al lienzo pixel-art, para que las letras se vean
 # nitidas (nunca pixeladas ni borrosas).
-_HIRES = None  # (superficie_base, factor, capa_tamanio_ventana)
+_HIRES = None  # (superficie_base, factor, capa_tamanio_ventana) activa este frame
+_HIRES_CACHE = {}  # (id(base), w, h) -> (factor, capa) reutilizada entre frames
 
 
 def prepare_hires(base, scale):
-    """Activa la capa nativa. Llama una vez por frame antes de dibujar."""
+    """Activa la capa nativa. Se llama una vez por frame antes de dibujar.
+
+    La capa se cachea por tamano: se reutiliza la misma superficie entre
+    frames (muy barato en web/movil) y solo se vuelve a crear cuando cambia
+    la ventana. Al reutilizar se limpia para no acumular texto del frame
+    anterior.
+    """
     global _HIRES
     q = int(round(scale))
     if q < 2:
+        _HIRES = None
         return None
     w = int(round(base.get_width() * scale))
     h = int(round(base.get_height() * scale))
-    layer = pygame.Surface((w, h), pygame.SRCALPHA)
-    try:
-        layer = layer.convert_alpha()
-    except pygame.error:
-        pass
-    _HIRES = (base, q, layer)
-    return layer
+    key = (id(base), w, h)
+    hit = _HIRES_CACHE.get(key)
+    if hit is None:
+        layer = pygame.Surface((w, h), pygame.SRCALPHA)
+        try:
+            layer = layer.convert_alpha()
+        except pygame.error:
+            pass
+        hit = (q, layer)
+        _HIRES_CACHE[key] = hit
+    else:
+        hit[1].fill((0, 0, 0, 0))
+    _HIRES = (base, hit[0], hit[1])
+    return hit[1]
 
 
 def blit_hires(window, pos):
@@ -45,6 +60,29 @@ def _hires_for(surf):
     if _HIRES and surf is _HIRES[0]:
         return _HIRES[2], _HIRES[1]
     return None, 1
+
+
+# Cache de texto anti-aliased ya renderizado: los mismos mensajes se dibujan
+# frame tras frame (menus, HUD, dialogo), evitando llamar a font.render()
+# decenas de veces por frame, que es caro en la build web (wasm).
+_TEXT_CACHE = {}
+_TEXTCACHE_PX = 0
+_TEXTCACHE_MAX_PX = 6_000_000
+
+
+def _render_cached(msg, size, color, q):
+    """Renderiza (o reutiliza) la superficie opaca del texto."""
+    global _TEXTCACHE_PX
+    key = (msg, int(round(size)), tuple(color), int(q))
+    img = _TEXT_CACHE.get(key)
+    if img is None:
+        img = get_font(size * q).render(msg, True, color)
+        if not _TEXT_CACHE or _TEXTCACHE_PX >= _TEXTCACHE_MAX_PX:
+            _TEXT_CACHE.clear()
+            _TEXTCACHE_PX = 0
+        _TEXT_CACHE[key] = img
+        _TEXTCACHE_PX += img.get_width() * img.get_height()
+    return img
 
 
 def get_font(size):
@@ -69,7 +107,7 @@ def get_font(size):
 
 
 def _render_aa(msg, size, color, q, alpha=None):
-    img = get_font(size * q).render(msg, True, color)
+    img = _render_cached(msg, size, color, q)
     if alpha is not None and alpha < 255:
         img = img.copy()
         img.set_alpha(max(0, min(255, int(alpha))))

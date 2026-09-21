@@ -41,8 +41,11 @@ class Game:
         else:
             pygame.mixer.pre_init(44100, -16, 2, 512)
             pygame.init()
+            info = pygame.display.Info()
             self.window = pygame.display.set_mode(
-                (S.GAME_W * S.SCALE, S.GAME_H * S.SCALE), pygame.RESIZABLE)
+                S.desktop_window_size(int(info.current_w),
+                                      int(info.current_h)),
+                pygame.RESIZABLE)
             pygame.display.set_caption(S.TITLE)
             self.scale_rect = self.window.get_rect()
         self.screen = pygame.Surface((S.GAME_W, S.GAME_H))
@@ -100,6 +103,8 @@ class Game:
         if self.window is not None:
             self.scale_rect = self.window.get_rect()
         self.zoom = 1.0
+        self._frame_key = None
+        self._frame_surf = None
 
         data = savegame.load()
         self.audio.apply_config(data.get("audio", {}))
@@ -689,7 +694,16 @@ class Game:
             crop = pygame.Rect(int((zw - S.GAME_W) / 2), int((zh - S.GAME_H) / 2),
                                S.GAME_W, S.GAME_H)
             source = big.subsurface(crop)
-        frame = pygame.transform.scale(source, (w, h))
+        frame = None
+        if self.zoom == 1.0 and self._frame_surf is not None \
+                and self._frame_key == (w, h):
+            pygame.transform.scale(source, (w, h), self._frame_surf)
+            frame = self._frame_surf
+        else:
+            frame = pygame.transform.scale(source, (w, h))
+            if self.zoom == 1.0:
+                self._frame_key = (w, h)
+                self._frame_surf = frame
         self.window.blit(frame, (x, y))
         ui.blit_hires(self.window, (x, y))
         ui.end_hires()

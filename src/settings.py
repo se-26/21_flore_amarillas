@@ -52,6 +52,18 @@ GAME_W, GAME_H = 384, 216
 SCALE = 3
 WINDOW_W, WINDOW_H = GAME_W * SCALE, GAME_H * SCALE
 FPS = 60
+
+
+def desktop_window_size(screen_w, screen_h):
+    """Tamano inicial de la ventana en escritorio: 16:9 que llena ~90% del
+    alto disponible del monitor (nunca pasa del ancho ni es menor que el
+    tamano base del pixel art). La resolucion logica del juego no cambia:
+    el render se escala a lo que ocupe la ventana."""
+    h = int(float(screen_h) * 0.9)
+    w = int(h * 16 / 9)
+    w = min(w, int(float(screen_w)))
+    base_w, base_h = GAME_W * SCALE, GAME_H * SCALE
+    return (max(base_w, w), max(base_h, h))
 TILE = 16
 TITLE = "21 de Septiembre: Flores para Ti"
 
