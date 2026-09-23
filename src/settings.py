@@ -12,28 +12,6 @@ SAVE_PATH = os.path.join(BASE_DIR, "save.json")
 CONFIG_PATH = os.path.join(BASE_DIR, "save.json")
 
 
-def _detect_mobile():
-    """True si corre en la web desde un celular ('emscripten' + userAgent)."""
-    try:
-        if "emscripten" in str(getattr(sys, "platform", "")):
-            return True
-        import platform
-        if "Emscripten" in platform.system():
-            return True
-    except Exception:
-        pass
-    try:
-        from browser import navigator
-        ua = (navigator.userAgent or "").lower()
-    except Exception:
-        ua = ""
-    return any(k in ua for k in ("mobile", "android", "iphone",
-                                 "ipad", "webos", "blackberry"))
-
-
-IS_MOBILE = _detect_mobile()
-
-
 def _detect_web():
     """True si corre dentro de un navegador (build pygbag/emscripten)."""
     try:
@@ -47,9 +25,63 @@ def _detect_web():
 
 IS_WEB = _detect_web()
 
+
+def _touch_window():
+    """Devuelve el objeto 'window' del navegador en la build web (o None)."""
+    try:
+        from platform import window  # pygbag
+        return window if window is not None else None
+    except Exception:
+        try:
+            from browser import window  # fallback
+            return window
+        except Exception:
+            return None
+
+
+def _detect_mobile():
+    """True solo cuando hay capacidad tactil REAL (o un UA movil).
+
+    En escritorio nativo es siempre False (no hay navegador). En la web se
+    consultan las capacidades del navegador (maxTouchPoints / ontouchstart /
+    pointer:coarse), NUNCA el tamaño de ventana: el bug anterior devolvia True
+    para cualquier build emscripten y mostraba los controles tactiles en un
+    Chrome de PC. El userAgent queda como ultimo recurso.
+    """
+    if not IS_WEB:
+        return False
+    try:
+        w = _touch_window()
+        if w is not None:
+            if float(w.maxTouchPoints or 0) > 0:
+                return True
+            if getattr(w, "ontouchstart", None) is not None:
+                return True
+            try:
+                media = w.matchMedia("(pointer: coarse)")
+                if bool(getattr(media, "matches", False)):
+                    return True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        from browser import navigator
+        ua = (navigator.userAgent or "").lower()
+    except Exception:
+        ua = ""
+    return any(k in ua for k in ("mobile", "android", "iphone",
+                                 "ipad", "webos", "blackberry"))
+
+
+IS_MOBILE = _detect_mobile()
+
 # Resolucion interna pixel art (se escala a la ventana)
 GAME_W, GAME_H = 384, 216
-SCALE = 3
+# SOLO WEB usa SCALE=2 (384x216 -> framebuffer 768x432): el coste de
+# presentar/componer el framebuffer es el principal gasto en la build web
+# (antes 1152x648 con SCALE=3). PC conserva SCALE=3 porque funciona excelente.
+SCALE = 2 if IS_WEB else 3
 WINDOW_W, WINDOW_H = GAME_W * SCALE, GAME_H * SCALE
 FPS = 60
 
@@ -70,6 +102,27 @@ TITLE = "21 de Septiembre: Flores para Ti"
 FLOWERS_GOAL = 10
 
 # ------------- Fisica del plataformas -------------
+# ---------------- Musica: histeresis de tension ----------------
+# La transicion de pista entre "exploracion" (tema del nivel) y "tension" se
+# hace con histeresis para que el tema no cambie a la minima fluctuacion.
+#
+#   * ENTRAR en tension exige que algun enemigo vivo permanezca DENTRO de la
+#     caja NEAR un tiempo sostenido (TENSION_ENTER_T). Evita activar tension
+#     por un enemigo que patrulla y cruza el borde un instante.
+#   * SALIR exige que TODOS los enemigos queden FUERA de la caja FAR (mas
+#     grande que NEAR) un tiempo largo y sostenido (TENSION_EXIT_T). Asi una
+#     pista no se corta a la minima que el enemigo se aleja y vuelve.
+#
+# La caja FAR amplia + los tiempos de espera dan histeresis: el tema no
+# "flipea" cuando un enemigo esta justo en el limite, evitando reinicios
+# constantes de la misma pista de musica.
+TENSION_NEAR_X = 150.0
+TENSION_NEAR_Y = 110.0
+TENSION_FAR_X = 260.0
+TENSION_FAR_Y = 200.0
+TENSION_ENTER_T = 0.30
+TENSION_EXIT_T = 2.5
+
 GRAVITY = 900.0
 MAX_FALL = 420.0
 ACCEL = 1000.0

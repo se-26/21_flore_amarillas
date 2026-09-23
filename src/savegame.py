@@ -44,7 +44,7 @@ def save(data):
         with open(S.SAVE_PATH, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2, ensure_ascii=False)
         return True
-    except OSError:
+    except Exception:
         return False
 
 

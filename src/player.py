@@ -10,6 +10,38 @@ class Player:
 
     def __init__(self, frames, x, y, game):
         self.frames = frames
+        # ------------------------------------------------------------------
+        # GUARD ANTI-MICROBRINCO (anclaje de pies):
+        # La altura de anclaje del render se calcula UNA sola vez al crear el
+        # hero, como el maximo de alturas del abanico completo de superficies
+        # (todas las animaciones x ambas variantes = 28px, medido).
+        # El blit vertical usa esta altura canónica y NO `img.get_height()`
+        # de la frame en vivo, para que aunque una frame individual variase
+        # 1px (ojo/body_dy/recorte del outline) los pies permanezcan clavados
+        # a `self.rect.bottom` (mismo pixel de suelo). Mantiene intactos:
+        # gravedad, fisica, colision, blit de piso, resistencia, camara, HUD.
+        # ------------------------------------------------------------------
+        self._render_h = -1
+        try:
+            self._render_h = max(
+                img.get_height()
+                for lst in frames.values()
+                for img in lst
+            )
+        except Exception:
+            pass
+        if self._render_h <= 0:
+            self._render_h = 28
+        self._flip_by_id = {}
+        self._can_flip = False
+        try:
+            self._flip_by_id = {
+                id(lst): [pygame.transform.flip(f, True, False) for f in lst]
+                for lst in frames.values()
+            }
+            self._can_flip = True
+        except Exception:
+            pass
         self.game = game
         self.rect = pygame.Rect(int(x), int(y), self.W, self.H)
         self.fx, self.fy = float(x), float(y)
@@ -216,7 +248,15 @@ class Player:
 
     def _physics(self, dt, level):
         self.was_on_ground = self.on_ground
-        self.vy = min(S.MAX_FALL, self.vy + S.GRAVITY * dt)
+        if not self.on_ground:
+            self.vy = min(S.MAX_FALL, self.vy + S.GRAVITY * dt)
+        # Apoyado: NO se acumula gravedad en vy. Si seguimos sumando
+        # GRAVITY*dt cada frame estando quieto, fy acumula residuo fraccional
+        # y int(fy) acaba redondeando 1px hacia abajo; la colision lo devuelve
+        # arriba -> un mini "brinquito" vertical repetido aunque el jugador no
+        # toque nada. Con vy == 0 el contacto queda fijo en el pixel exacto.
+        # (La caida se retoma al primer frame sin suelo; el salto no cambia:
+        # jump() ya pone vy directamente y se hace en el mismo update.)
 
         # ---- eje X
         self.fx += self.vx * dt
@@ -303,9 +343,17 @@ class Player:
             self.state = "jump" if self.vy < 0 else "fall"
         elif self.land_t > 0:
             self.state = "land"
+        elif self.state in ("run",) and abs(self.vx) > S.WALK_SPEED:
+            self.state = "run"
         elif abs(self.vx) > S.WALK_SPEED + 5:
             self.state = "run"
-        elif abs(self.vx) > 6:
+        elif self.state in ("walk", "run") and abs(self.vx) > 3:
+            # Histeresis: una vez caminando no volver a "idle" hasta que la
+            # velocidad caiga bien por debajo del umbral, para que la friccion
+            # residual no haga parpadear al personaje (parece que se mueve
+            # estando quieto).
+            self.state = "walk"
+        elif abs(self.vx) > 10:
             self.state = "walk"
         else:
             self.state = "idle"
@@ -315,9 +363,10 @@ class Player:
         rates = {"idle": 3.5, "walk": 9.0, "run": 13.0, "fall": 6.0,
                  "attack": 12.0, "throw": 12.0, "crouch": 3.0, "celebrate": 5.0}
         rate = rates.get(self.state, 6.0)
-        img = frames[int(self.anim_t * rate) % len(frames)]
-        if self.facing < 0:
-            img = pygame.transform.flip(img, True, False)
+        i = int(self.anim_t * rate) % len(frames)
+        img = frames[i]
+        if self.facing < 0 and self._can_flip:
+            img = self._flip_by_id[id(frames)][i]
         return img
 
     def draw(self, surf, camera):
@@ -325,5 +374,5 @@ class Player:
             return
         img = self.current_image()
         x = self.rect.centerx - img.get_width() // 2
-        y = self.rect.bottom - img.get_height() + 1
+        y = self.rect.bottom - self._render_h + 1
         surf.blit(img, camera.to_screen(x, y))

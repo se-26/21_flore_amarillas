@@ -1,4 +1,4 @@
-<html lang="en-us"><script>/* pygbag 0.9.3 asume que http://localhost:8xxx tiene un espejo local de /cdn/ (su propio servidor de pruebas). Con un servidor estatico normal (python -m http.server) ese /cdn/ no existe y los wheels de pygame fallan con "INVALID pygame". Redirigimos localhost -> 127.0.0.1 para que el runtime baje los wheels del CDN oficial de pygame-web. En GitHub Pages (host no localhost) esta linea no se dispara. */ if(location.hostname==="localhost"){location.replace(location.protocol+"//127.0.0.1:"+location.port+location.pathname+location.search+location.hash);}</script><script src="{{cookiecutter.cdn}}pythons.js" type=module id="site" data-python="python{{cookiecutter.PYBUILD}}" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
+<html lang="en-us"><script>/* pygbag 0.9.3 asume que http://localhost:8xxx tiene un espejo local de /cdn/ (su propio servidor de pruebas). Con un servidor estatico normal (python -m http.server) ese /cdn/ no existe y los wheels de pygame fallan por no poder bajar los binarios de su CDN. Redirigimos localhost -> 127.0.0.1 para que el runtime baje los wheels del CDN oficial de pygame-web. En GitHub Pages (host no localhost) esta linea no se dispara. */ if(location.hostname==="localhost"){location.replace(location.protocol+"//127.0.0.1:"+location.port+location.pathname+location.search+location.hash);}</script><script src="{{cookiecutter.cdn}}pythons.js" type=module id="site" data-python="python{{cookiecutter.PYBUILD}}" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
 
 print("""
 Loading {{cookiecutter.title}} from {{cookiecutter.archive}}.apk
@@ -23,7 +23,7 @@ from pathlib import Path
 # do not rename
 async def custom_site():
     import embed
-    platform.document.body.style.background = "#7f7f7f"
+    platform.document.body.style.background = "#8ecadc"
 
     platform.window.transfer.hidden = true
     platform.window.canvas.style.visibility = "visible"
@@ -203,9 +203,162 @@ function apply_view_reqs() {
             if (fp && typeof fp.catch === "function") fp.catch(function () {});
         } catch (e) {}
     }
+
+    // Ajustar ya con el tamano de pantalla definitivo (fullscreen/landscape ya
+    // solicitados) y, en movil, intentar esconder la barra de direcciones.
+    fit_to_viewport();
+    if (coarse) collapse_mobile_bars();
 }
 window.addEventListener("pointerdown", apply_view_reqs, { once : true })
 window.addEventListener("keydown",     apply_view_reqs, { once : true })
+
+// ==========================================================================
+//  Layout del canvas: el juego es 16:9 (384x216; framebuffer web 768x432).
+//  pygbag 0.9.3 ya tiene window_canvas_adjust (via window_resize) que encaja
+//  el canvas en el viewport conservando la proporcion de sus atributos
+//  width/height, que ahora arrancan en 768x432 (no 1x1). Con eso ya no
+//  calcula relacion 1:1 y deja de quedar cuadrado en moviles.
+//
+//  Lo que falta para que el movil use TODA la pantalla:
+//    * pygbag mide con innerWidth/innerHeight (la ventana del navegador),
+//      asi que con la barra de direcciones visible el canvas se queda corto
+//      y NO termina de cubrir. Aqui se recalcula SIEMPRE con el
+//      visualViewport (el area realmente visible) y, ademas, se intenta
+//      ocultar la barra de direcciones via scroll (iOS/Android).
+//    * la entrada/salida de fullscreen reescribe el CSS del canvas;
+//      reencajar justo despues (idempotente: misma vista -> mismo tamano).
+//
+//  Hook de window_resize: en vez de localizar la funcion global del runtime
+//  (cambia de nombre/posicion segun la build y se reasigna), se hace polling
+//  barato cada 250ms; cuando window_resize existe se la envuelve una sola vez
+//  y cada invocacion (la de custom_site, la del resize de pygame y las de los
+//  botones python) termina re-encajando con fit_to_viewport().
+// ==========================================================================
+function viewport_geometry() {
+    var vv = window.visualViewport;
+    if (vv && vv.width > 0 && vv.height > 0) {
+        return {
+            w: vv.width,
+            h: vv.height,
+            x: vv.pageLeft || 0,
+            y: vv.pageTop || 0
+        };
+    }
+    return { w: window.innerWidth || 0, h: window.innerHeight || 0, x: 0, y: 0 };
+}
+
+// Encuadra el canvas a 16:9 dentro del area visible REAL (visualViewport),
+// centrado, sin deformar. La franja sobrante queda cubierta por el fondo del
+// body (extension del cielo del juego). Es barata e idempotente.
+var __fit_prev = { x:-999999, y:-999999, w:-1, h:-1 };
+function fit_to_viewport() {
+    try {
+        var canvas = document.getElementById("canvas");
+        if (!canvas) return;
+        var g = viewport_geometry();
+        if (g.w <= 0 || g.h <= 0) return;
+        var dw = g.w;
+        var dh = Math.floor(dw * 9 / 16);
+        if (dh > g.h) {
+            dh = g.h;
+            dw = Math.floor(dh * 16 / 9);
+        }
+        // Redondeo SIMETRICO (offset siempre entero PAR) y calculado sobre el
+        // centro, de modo que dos estados de viewport que solo difieren en
+        // 1px de alto/barra de direcciones produzcan exactamente la misma
+        // posicion -> sin "flutter" del canvas entero alrededor del fondo.
+        var nx = Math.round(g.x + (g.w - dw) / 2);
+        var ny = Math.round(g.y + (g.h - dh) / 2);
+        if (nx !== __fit_prev.x || ny !== __fit_prev.y ||
+            dw !== __fit_prev.w || dh !== __fit_prev.h) {
+            __fit_prev.x = nx; __fit_prev.y = ny;
+            __fit_prev.w = dw; __fit_prev.h = dh;
+            canvas.style.width  = dw + "px";
+            canvas.style.height = dh + "px";
+            canvas.style.left   = nx + "px";
+            canvas.style.top    = ny + "px";
+            canvas.style.position = "absolute";
+        }
+    } catch (e) {}
+}
+
+// Tras cualquier reajuste del runtime (window_resize de pygbag, que corre
+// DESPUES de nuestros hooks y reescribe left/width con su propia referencia),
+// volver a ser nosotros el unico autor de la posicion del canvas, siempre
+// centrado y simetrico sobre el viewport real. Idempotente y barato.
+function fit_to_viewport_autoridad() {
+    fit_to_viewport();
+    setTimeout(fit_to_viewport, 0);
+    setTimeout(fit_to_viewport, 90);
+    setTimeout(fit_to_viewport, 260);
+}
+setInterval(fit_to_viewport_autoridad, 1500);
+
+// Intentos (guarnecidos) de ocultar la barra de direcciones movil con scroll.
+function collapse_mobile_bars() {
+    if (document.fullscreenElement) return;
+    try {
+        if (window.scrollY === 0) { window.scrollTo(0, 1); }
+    } catch (e) {}
+    setTimeout(fit_to_viewport, 120);
+    setTimeout(fit_to_viewport, 400);
+}
+
+function hook_window_resize() {
+    if (typeof window_resize === "function" && !window_resize.__fit23) {
+        var orig = window_resize;
+        var wrapped = function () {
+            var r = orig.apply(this, arguments);
+            try {
+                if (r && typeof r.then === "function") {
+                    r.then(fit_to_viewport, fit_to_viewport);
+                }
+            } catch (e) {}
+            fit_to_viewport();
+            return r;
+        };
+        wrapped.__fit23 = true;
+        window.window_resize = wrapped;
+    }
+}
+setInterval(hook_window_resize, 250);
+
+function web_refit() {
+    try {
+        if (typeof window_resize === "function") {
+            window_resize();
+        }
+    } catch (e) {}
+}
+
+function web_refit_delayed() {
+    setTimeout(web_refit, 50);
+    setTimeout(web_refit, 160);
+}
+
+window.addEventListener("resize", web_refit, false);
+window.addEventListener("orientationchange", function () {
+    web_refit_delayed();
+    collapse_mobile_bars();
+}, false);
+window.addEventListener("fullscreenchange", function () {
+    web_refit_delayed();
+    try { screen.orientation.unlock(); } catch (e) {}
+}, false);
+if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", function () { fit_to_viewport(); }, false);
+    window.visualViewport.addEventListener("scroll", function () { fit_to_viewport(); }, false);
+}
+// tras el primer gesto (fullscreen en movil/landscape) reajustar
+window.addEventListener("pointerdown", function () {
+    web_refit_delayed();
+    collapse_mobile_bars();
+}, { once : true });
+window.addEventListener("keydown", web_refit_delayed, { once : true });
+
+// Antes de que el juego dibuje: fijar el tamano correcto desde el primer marco
+// (aunque el runtime todavia no haya definido window_resize).
+fit_to_viewport();
 
 function show_infobox() {
     infobox.style.display = "block";
@@ -227,8 +380,7 @@ function show_infobox() {
     <title>{{cookiecutter.title}}</title>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="viewport" content="height=device-height, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, viewport-fit=cover">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes"/>
 
@@ -286,11 +438,15 @@ function show_infobox() {
             image-rendering: crisp-edges;
         }
 
+        /* El fondo del body coincide con el cielo del juego (SKY #8ECADC):
+           en pantallas que no son 16:9 el area que no cubre el canvas se ve
+           como extension del escenario, nunca como una franja gris. */
         body {
             font-family: arial;
             margin: 0;
             padding: none;
-            background-color:powderblue;
+            background-color: #7f9bb0;
+            background-image: linear-gradient(180deg, #8ecadc 0%, #7f9bb0 100%);
         }
 
         .topright{
@@ -374,8 +530,8 @@ function show_infobox() {
 
 
     <canvas class="emscripten" id="canvas"
-width="1px"
-height="1px"
+width="768"
+height="432"
     oncontextmenu="event.preventDefault()" tabindex=1>
     </canvas>
 

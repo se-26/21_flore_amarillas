@@ -26,6 +26,20 @@ class PetalBackdrop:
         self.p = [[random.uniform(0, S.GAME_W), random.uniform(-S.GAME_H, S.GAME_H),
                    random.uniform(9, 24), random.random() * 6] for _ in range(n)]
         self.t = 0.0
+        self._baked = None
+        self._baked_key = None
+
+    def _bake(self, c1, c2):
+        bg = pygame.Surface((S.GAME_W, S.GAME_H))
+        for y in range(S.GAME_H):
+            k = y / S.GAME_H
+            bg.fill((int(c1[0] + (c2[0] - c1[0]) * k),
+                     int(c1[1] + (c2[1] - c1[1]) * k),
+                     int(c1[2] + (c2[2] - c1[2]) * k)), (0, y, S.GAME_W, 1))
+        pygame.draw.ellipse(bg, (108, 178, 96), (-70, 156, 320, 150))
+        pygame.draw.ellipse(bg, (132, 200, 108), (170, 168, 360, 150))
+        pygame.draw.rect(bg, (96, 166, 88), (0, 202, S.GAME_W, 18))
+        return bg
 
     def update(self, dt):
         self.t += dt
@@ -37,14 +51,11 @@ class PetalBackdrop:
                 q[0] = random.uniform(0, S.GAME_W)
 
     def draw(self, surf, c1=(120, 190, 236), c2=(252, 232, 178)):
-        for y in range(S.GAME_H):
-            k = y / S.GAME_H
-            surf.fill((int(c1[0] + (c2[0] - c1[0]) * k),
-                       int(c1[1] + (c2[1] - c1[1]) * k),
-                       int(c1[2] + (c2[2] - c1[2]) * k)), (0, y, S.GAME_W, 1))
-        pygame.draw.ellipse(surf, (108, 178, 96), (-70, 156, 320, 150))
-        pygame.draw.ellipse(surf, (132, 200, 108), (170, 168, 360, 150))
-        pygame.draw.rect(surf, (96, 166, 88), (0, 202, S.GAME_W, 18))
+        key = (c1, c2)
+        if self._baked_key != key:
+            self._baked = self._bake(c1, c2)
+            self._baked_key = key
+        surf.blit(self._baked, (0, 0))
         for q in self.p:
             pygame.draw.rect(surf, S.GOLD, (int(q[0]), int(q[1]), 2, 2))
 
@@ -86,8 +97,11 @@ class ListMenu:
             for i, r in enumerate(self.rects):
                 if r.collidepoint(pos):
                     self.index = i
-                    self.confirm()
+                    self.tap(i, pos)
                     break
+
+    def tap(self, i, pos):
+        self.confirm()
 
     def on_side(self, d):
         pass
@@ -239,6 +253,28 @@ class SettingsMenu(ListMenu):
         super().__init__(game, ["MUSICA", "EFECTOS", "VOLUMEN MUSICA",
                                 "VOLUMEN EFECTOS", "VOLVER"])
         self.origin = "menu"
+        self._overlay = None
+
+    def tap(self, i, pos):
+        opt = self.options[i]
+        if opt in ("VOLUMEN MUSICA", "VOLUMEN EFECTOS"):
+            self.index = i
+            r = self.rects[i]
+            # El valor "<  xx%  >" se dibuja alineado a la derecha de la fila
+            # (box.right-24). Dividir por el centro de la fila entera (x=192)
+            # dejaba TODO el texto a su derecha: tocar el "<" (bajar) caia en
+            # la mitad "subir" y el volumen solo subia. Se parte ahora por el
+            # centro del texto: todo lo que quede a la izquierda (incluido el
+            # "<") baja y todo lo que quede a la derecha (incluido el ">")
+            # sube. La mitad izquierda despejada de la fila tambien baja.
+            a = self.game.audio
+            pct = int((a.music_volume if opt == "VOLUMEN MUSICA"
+                       else a.sfx_volume) * 100)
+            w = ui.get_font(12).size(f"<  {pct}%  >")[0]
+            boundary = r.right - 14 - w // 2
+            self.on_side(-1 if pos[0] < boundary else 1)
+        else:
+            super().tap(i, pos)
 
     def cancel(self):
         self.game.close_settings()
@@ -265,9 +301,12 @@ class SettingsMenu(ListMenu):
             self.on_side(1)
 
     def draw(self, surf, background=None):
-        overlay = pygame.Surface((S.GAME_W, S.GAME_H), pygame.SRCALPHA)
-        overlay.fill((14, 12, 22, 190))
-        surf.blit(overlay, (0, 0))
+        # La superficie del oscurecimiento se reutiliza (antes se creaba una
+        # nueva 384x216 SRCALPHA en cada frame, innecesario en la build web).
+        if self._overlay is None:
+            self._overlay = pygame.Surface((S.GAME_W, S.GAME_H), pygame.SRCALPHA)
+        self._overlay.fill((14, 12, 22, 190))
+        surf.blit(self._overlay, (0, 0))
         box = pygame.Rect(0, 0, 268, 160)
         box.center = (S.GAME_W // 2, S.GAME_H // 2)
         ui.panel(surf, box)

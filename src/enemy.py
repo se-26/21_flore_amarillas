@@ -27,6 +27,15 @@ class Enemy:
         self.kind = kind
         self.cfg = CONFIG[kind]
         self.frames = frames
+        self.flip_frames = []
+        self._can_flip = False
+        try:
+            self.flip_frames = [
+                pygame.transform.flip(f, True, False) for f in frames
+            ]
+            self._can_flip = True
+        except Exception:
+            pass
         self.game = game
         self.boss = boss
         w, h = self.cfg["w"], self.cfg["h"]
@@ -200,9 +209,10 @@ class Enemy:
 
     # ---------------------------------------------------------- dibujado
     def image(self):
-        img = self.frames[int(self.t * 6) % len(self.frames)]
-        if self.facing > 0:
-            img = pygame.transform.flip(img, True, False)
+        if self.facing > 0 and self._can_flip:
+            img = self.flip_frames[int(self.t * 6) % len(self.flip_frames)]
+        else:
+            img = self.frames[int(self.t * 6) % len(self.frames)]
         if self.flash > 0:
             img = img.copy()
             img.fill((255, 255, 255, 0), special_flags=pygame.BLEND_RGB_ADD)

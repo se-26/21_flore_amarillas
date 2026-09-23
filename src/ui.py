@@ -8,6 +8,12 @@ from . import settings as S
 
 _FONTS = {}
 
+# Cache acotado de paneles compuestos (HUD, botones y ventanas los dibujan
+# varias veces por frame): la clave incluye tamano y colores, y se limpia si
+# crece demasiado (nunca mas de ~64 paneles vivos).
+_PANEL_CACHE = {}
+_PANEL_MAX = 64
+
 # Capa de texto en alta resolucion: reescala el texto a la resolucion real de
 # la ventana y lo superpone al lienzo pixel-art, para que las letras se vean
 # nitidas (nunca pixeladas ni borrosas).
@@ -180,19 +186,34 @@ def wrap(msg, size, max_w):
 
 def panel(surf, rect, fill=(44, 38, 56), border=S.CREAM, alpha=236, accent=S.YELLOW_D,
           shadow=True):
+    # El HUD y los botones dibujan varios paneles cada frame (canvases de
+    # SRCALPHA mas 7 draw por panel). Se cachea el resultado por parametros:
+    # tras el primer frame, dibujar un panel es solo 1-2 blits.
     if shadow:
-        sh = pygame.Surface(rect.size, pygame.SRCALPHA)
-        sh.fill((14, 10, 20, 90))
+        key = ("sh", rect.w, rect.h)
+        sh = _PANEL_CACHE.get(key)
+        if sh is None:
+            if len(_PANEL_CACHE) >= _PANEL_MAX:
+                _PANEL_CACHE.clear()
+            sh = pygame.Surface(rect.size, pygame.SRCALPHA)
+            sh.fill((14, 10, 20, 90))
+            _PANEL_CACHE[key] = sh
         surf.blit(sh, (rect.x + 3, rect.y + 3))
-    box = pygame.Surface(rect.size, pygame.SRCALPHA)
-    r = box.get_rect()
-    pygame.draw.rect(box, (*fill, alpha), pygame.Rect(0, 1, r.w, r.h - 2))
-    pygame.draw.rect(box, (*fill, alpha), pygame.Rect(1, 0, r.w - 2, r.h))
-    pygame.draw.rect(box, border, pygame.Rect(1, 0, r.w - 2, 1))
-    pygame.draw.rect(box, border, pygame.Rect(1, r.h - 1, r.w - 2, 1))
-    pygame.draw.rect(box, border, pygame.Rect(0, 1, 1, r.h - 2))
-    pygame.draw.rect(box, border, pygame.Rect(r.w - 1, 1, 1, r.h - 2))
-    pygame.draw.rect(box, accent, pygame.Rect(2, 2, r.w - 4, r.h - 4), 1)
+    key = ("box", rect.w, rect.h, fill, border, alpha, accent)
+    box = _PANEL_CACHE.get(key)
+    if box is None:
+        if len(_PANEL_CACHE) >= _PANEL_MAX:
+            _PANEL_CACHE.clear()
+        r = pygame.Rect(0, 0, rect.w, rect.h)
+        box = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(box, (*fill, alpha), pygame.Rect(0, 1, r.w, r.h - 2))
+        pygame.draw.rect(box, (*fill, alpha), pygame.Rect(1, 0, r.w - 2, r.h))
+        pygame.draw.rect(box, border, pygame.Rect(1, 0, r.w - 2, 1))
+        pygame.draw.rect(box, border, pygame.Rect(1, r.h - 1, r.w - 2, 1))
+        pygame.draw.rect(box, border, pygame.Rect(0, 1, 1, r.h - 2))
+        pygame.draw.rect(box, border, pygame.Rect(r.w - 1, 1, 1, r.h - 2))
+        pygame.draw.rect(box, accent, pygame.Rect(2, 2, r.w - 4, r.h - 4), 1)
+        _PANEL_CACHE[key] = box
     surf.blit(box, rect.topleft)
 
 
@@ -218,6 +239,7 @@ def prompt(surf, msg, x, y):
 class HUD:
     def __init__(self, game):
         self.game = game
+        self._ammo_dim = None
 
     def draw(self, surf):
         p = self.game.progress
@@ -235,10 +257,12 @@ class HUD:
              S.GOLD if p.flowers >= need else S.CREAM)
 
         if p.power:
+            if self._ammo_dim is None:
+                self._ammo_dim = art.ammo.copy()
+                self._ammo_dim.set_alpha(70)
+            dim = self._ammo_dim
             for i in range(S.MAX_AMMO):
-                icon = art.ammo.copy()
-                if i >= p.ammo:
-                    icon.set_alpha(70)
+                icon = art.ammo if i < p.ammo else dim
                 surf.blit(icon, (box.x + 60 + i * 8, box.y + 17))
 
         if self.game.level and self.game.state != "pause":

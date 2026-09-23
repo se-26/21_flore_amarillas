@@ -239,9 +239,7 @@ def hero_frames(key, female):
     f = lambda **kw: hero_frame(pal, female, **kw)
     frames = {
         "idle": [f(legs="stand", arms="down"),
-                 f(legs="stand", arms="down", body_dy=1),
-                 f(legs="stand", arms="down"),
-                 f(legs="stand", arms="down", body_dy=1, eyes="closed")],
+                 f(legs="stand", arms="down", eyes="closed")],
         "walk": [f(legs="walkA", arms="swingA"),
                  f(legs="walkB", arms="down", body_dy=-1),
                  f(legs="walkC", arms="swingB"),

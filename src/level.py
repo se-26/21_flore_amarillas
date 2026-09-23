@@ -54,6 +54,7 @@ class VanishPlatform:
         self.t = phase % self.CYCLE
         self.solid = self.t < self.PRESENTE
         self.alpha = 255
+        self._acache = {}
 
     def update(self, dt):
         self.t = (self.t + dt) % self.CYCLE
@@ -66,8 +67,17 @@ class VanishPlatform:
             self.alpha = 60
 
     def draw(self, surf, camera, art, theme):
-        tile = art.tiles[theme]["plat"].copy()
-        tile.set_alpha(self.alpha)
+        # El alpha cambia cada frame durante el fade; se reutiliza el tile ya
+        # copiado para cada valor de alpha en lugar de copy()+set_alpha() por
+        # plataforma y por frame (van varias encima del nivel).
+        a = self.alpha
+        tile = self._acache.get(a)
+        if tile is None:
+            if len(self._acache) > 64:
+                self._acache.clear()
+            tile = art.tiles[theme]["plat"].copy()
+            tile.set_alpha(a)
+            self._acache[a] = tile
         for i in range(self.rect.w // S.TILE):
             surf.blit(tile, camera.to_screen(self.rect.x + i * S.TILE, self.rect.y))
 

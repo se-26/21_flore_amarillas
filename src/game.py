@@ -84,6 +84,7 @@ class Game:
 
         self.state = "menu"
         self.prev_state = "menu"
+        self._web_touch_seen = False
         self.level = None
         self.player = None
         self.objective = None
@@ -98,6 +99,8 @@ class Game:
         self.fade_state = None
         self.fade_cb = None
         self.tension_t = 0.0
+        self.tension_enter_t = 0.0
+        self.tension_exit_t = 0.0
         self.level_done = False
         self.interact_target = None
         if self.window is not None:
@@ -105,6 +108,7 @@ class Game:
         self.zoom = 1.0
         self._frame_key = None
         self._frame_surf = None
+        self._settings_prewarmed = False
 
         data = savegame.load()
         self.audio.apply_config(data.get("audio", {}))
@@ -131,6 +135,26 @@ class Game:
     def notify(self, msg, seconds=3.0):
         self.notice = msg
         self.notice_t = seconds
+
+    def _web_resize(self):
+        """Reajusta el canvas del navegador (web/pygbag).
+
+        Se llama despues de que pygame fijo el tamano real del canvas
+        (set_mode) y despues del primer frame: pygbag recalcula el encaje
+        16:9 del canvas en el viewport usando window_canvas_adjust. Es
+        idempotente (misma vista -> mismo resultado, sin loops de resize).
+        """
+        if not S.IS_WEB or self.window is None:
+            return
+        try:
+            import platform
+            platform.window.window_resize()
+        except Exception:
+            try:
+                import browser
+                browser.window.window_resize()
+            except Exception:
+                pass
 
     def to_internal(self, pos):
         r = self.scale_rect
@@ -223,7 +247,10 @@ class Game:
         self.state = "settings"
 
     def close_settings(self):
-        self.save_game()
+        try:
+            self.save_game()
+        except Exception:
+            pass
         self.state = self.settings_menu.origin
 
     def save_game(self):
@@ -305,6 +332,23 @@ class Game:
     # ---------------------------------------------------------- eventos
     def handle_events(self):
         for event in pygame.event.get():
+            if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION,
+                              pygame.FINGERUP):
+                self._web_touch_seen = True
+            if S.IS_WEB and self._web_touch_seen \
+                    and getattr(event, "touch", False):
+                # En SDL2/pygbag un toque genera DOS eventos del mismo gesto:
+                # FINGERDOWN + MOUSEBUTTONDOWN(touch=True) (el navegador emula
+                # el raton desde el dedo). Procesar ambos hace que el toque a
+                # VOLVER cierre CONFIGURACION con el FINGERDOWN y que el
+                # MOUSEBUTTONDOWN se procese YA contra el menu principal en
+                # la posicion bajo VOLVER (SALIR), cerrando el juego. Se
+                # descartan los eventos de raton marcados como originados por
+                # toque (recomendacion de la doc de pygame); los FINGER siguen
+                # procesandose y en escritorio no cambia nada (touch=False).
+                # Si algun dia un navegador no emitiera FINGER nunca, no se
+                # activa el filtrado y los touch-mouse siguen entrando.
+                continue
             if event.type == pygame.QUIT:
                 self.running = False
                 continue
@@ -575,13 +619,34 @@ class Game:
         self._update_music(dt, level, player)
 
     def _update_music(self, dt, level, player):
-        near = any(not e.dying and abs(e.rect.centerx - player.rect.centerx) < 150
-                   and abs(e.rect.centery - player.rect.centery) < 110
+        px, py = player.rect.centerx, player.rect.centery
+        near = any(not e.dying and abs(e.rect.centerx - px) < S.TENSION_NEAR_X
+                   and abs(e.rect.centery - py) < S.TENSION_NEAR_Y
                    for e in level.enemies)
-        if near:
-            self.tension_t = 2.5
+        far = all(e.dying or abs(e.rect.centerx - px) > S.TENSION_FAR_X
+                  or abs(e.rect.centery - py) > S.TENSION_FAR_Y
+                  for e in level.enemies)
+
+        if self.tension_t > 0:
+            # Ya en tension: se mantiene mientras algun enemigo este dentro
+            # de la caja FAR; solo se suelta tras un tiempo largo y sostenido
+            # con TODOS los enemigos bien lejos (histeresis de salida).
+            if far:
+                self.tension_exit_t += dt
+                if self.tension_exit_t >= S.TENSION_EXIT_T:
+                    self.tension_t = 0.0
+            else:
+                self.tension_exit_t = 0.0
         else:
-            self.tension_t = max(0.0, self.tension_t - dt)
+            # En exploracion: entrar a tension solo tras proximidad sostenida
+            # (evita activarla por un enemigo que patrulla cruzando el borde).
+            if near:
+                self.tension_enter_t += dt
+                if self.tension_enter_t >= S.TENSION_ENTER_T:
+                    self.tension_t = 1.0
+            else:
+                self.tension_enter_t = 0.0
+
         want = "tension" if self.tension_t > 0 else level.data.music
         if want != self.audio.current:
             self.audio.play_music(want, fade_ms=700)
@@ -612,6 +677,15 @@ class Game:
         st = self.state
 
         if st == "menu":
+            if not self._settings_prewarmed:
+                # Entrar a CONFIGURACION se sentia lento: el primer frame del
+                # dialogo renderizaba de cero las fuentes/textos/paneles (en
+                # wasm varias decenas de ms) justo al tocar. Se pre-renderiza
+                # UNA sola vez aqui, en el primer frame del menu, debajo del
+                # fondo opaco (que lo tapa por completo); al abrir
+                # CONFIGURACION el dialogo ya esta en cache y sale instantaneo.
+                self._settings_prewarmed = True
+                self.settings_menu.draw(surf)
             self.menu.draw(surf)
         elif st == "char_select":
             self.char_select.draw(surf)
@@ -685,7 +759,11 @@ class Game:
         w, h = int(S.GAME_W * scale), int(S.GAME_H * scale)
         x, y = (win_w - w) // 2, (win_h - h) // 2
         self.scale_rect = pygame.Rect(x, y, w, h)
-        self.window.fill((10, 8, 14))
+        # En web el frame siempre cubre el 100% de la ventana (sin bandas), asi
+        # que el fill de toda la ventana es una copia de framebuffer al pedo.
+        fills = x > 0 or y > 0 or w != win_w or h != win_h
+        if fills:
+            self.window.fill((10, 8, 14))
         source = self.screen
         if self.zoom != 1.0:
             z = max(1.0, self.zoom)
@@ -704,6 +782,46 @@ class Game:
             if self.zoom == 1.0:
                 self._frame_key = (w, h)
                 self._frame_surf = frame
+        if S.IS_WEB:
+            # Presentacion web de UNA sola pasada al canvas:
+            #
+            #   * El canvas CSS (canvas.emscripten, width:100% height:100%)
+            #     YA escala el framebuffer 768x432 hasta el viewport; no hace
+            #     falta que Python haga ese escalado extra con el fill y los
+            #     bandas. Aqui solo encajamos el frame en el rect ilustrado
+            #     (misma posicion x,y que antes) y dejamos que pygbag/canvas
+            #     haga el reescalado final. Resultado visual identico.
+            #
+            #   * se evita un `window.fill((10,8,14))` de toda la ventana y
+            #     reutilizamos el Surface de escala cacheado si el tamano no
+            #     cambio (misma clave que en escritorio).
+            if fills:
+                self.window.fill((10, 8, 14))
+            source = self.screen
+            if self.zoom != 1.0:
+                # zoom real (efecto de "sacudida"): igual que escritorio
+                z = max(1.0, self.zoom)
+                zw, zh = S.GAME_W * z, S.GAME_H * z
+                big = pygame.transform.scale(source, (int(zw), int(zh)))
+                crop = pygame.Rect(int((zw - S.GAME_W) / 2), int((zh - S.GAME_H) / 2),
+                                   S.GAME_W, S.GAME_H)
+                source = big.subsurface(crop)
+            frame = None
+            if self.zoom == 1.0 and self._frame_surf is not None \
+                    and self._frame_key == (w, h):
+                pygame.transform.scale(source, (w, h), self._frame_surf)
+                frame = self._frame_surf
+            else:
+                frame = pygame.transform.scale(source, (w, h))
+                if self.zoom == 1.0:
+                    self._frame_key = (w, h)
+                    self._frame_surf = frame
+            self.window.blit(frame, (x, y))
+            ui.blit_hires(self.window, (x, y))
+            ui.end_hires()
+            pygame.display.flip()
+            return
+
         self.window.blit(frame, (x, y))
         ui.blit_hires(self.window, (x, y))
         ui.end_hires()
@@ -717,11 +835,20 @@ class Game:
             for _ in range(4):
                 await asyncio.sleep(0)
         self._init_display()
+        # recien creada la ventana real el canvas ya tiene tamano: volver a
+        # encajar el canvas en el viewport (pygbag pudo medir antes con 1x1).
+        self._web_resize()
+        _first = True
         while self.running:
             dt = min(0.05, self.clock.tick(S.FPS) / 1000.0)
             self.handle_events()
             self.update(dt)
             self.draw()
+            if _first:
+                # despues del primer frame presentado recalcular una vez mas
+                # para que la presentacion quede igualada al viewport real.
+                self._web_resize()
+                _first = False
             await asyncio.sleep(0)
         self.save_game()
         pygame.quit()

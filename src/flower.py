@@ -63,6 +63,7 @@ class Sunflower:
         self.used = False
         self.t = 0.0
         self.rect = pygame.Rect(int(x) - 4, int(y) - 12, 22, 28)
+        self._dim = None
 
     def update(self, dt, particles):
         self.t += dt * 2.0
@@ -78,8 +79,12 @@ class Sunflower:
             surf.blit(_SUNFLOWER_GLOW, camera.to_screen(self.rect.centerx - 22,
                                                         self.rect.centery - 24))
         else:
-            img = img.copy()
-            img.set_alpha(150)
+            # version atenuada cacheada: solo un copy()+set_alpha() la primera
+            # vez que se usa, no por frame.
+            if self._dim is None:
+                self._dim = img.copy()
+                self._dim.set_alpha(150)
+            img = self._dim
         surf.blit(img, camera.to_screen(self.rect.x, self.rect.y - 4))
 
 
@@ -108,6 +113,7 @@ class Door:
         self.t = 0.0
         self.rect = pygame.Rect(int(x), int(y) - 24, 28, 40)
         self.open = False
+        self._dim = None
 
     def update(self, dt, particles):
         self.t += dt * 5
@@ -117,6 +123,8 @@ class Door:
     def draw(self, surf, camera):
         img = self.frames[int(self.t) % len(self.frames)]
         if not self.open:
-            img = img.copy()
-            img.set_alpha(170)
+            if self._dim is None:
+                self._dim = img.copy()
+                self._dim.set_alpha(170)
+            img = self._dim
         surf.blit(img, camera.to_screen(self.rect.x, self.rect.y))

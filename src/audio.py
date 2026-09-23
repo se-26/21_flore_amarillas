@@ -4,12 +4,31 @@ Prioridad: si existe el archivo en assets/ se usa; si no, se sintetiza con
 numpy; si tampoco hay numpy o tarjeta de sonido, el juego sigue en silencio.
 Nunca falla por un archivo ausente.
 
-Musica y efectos siempre se reproducen con pygame.mixer.Sound (no
-mixer.music).
+Musica y efectos se reproducen con pygame.mixer.Sound (NO mixer.music): en la
+build web de pygbag, pygame.mixer.music.load() decodifica el OGG completo de
+forma sincrona en el hilo principal cada vez que se cambia de pista y, con el
+stream todavia en fade, su puente SDL<>JS se estancaba y congelaba TODO el
+juego (personaje, controles y musica) nada mas avanzar al primer cambio de
+tema. Por eso la musica web usa Sound precargado en loop:
 
-En la version web (pygbag/emscripten) el navegador bloquea el sonido hasta
-que el usuario interactua: el mixer NO se abre al arrancar y se enciende al
-primer clic con inicializar_audio_navegador().
+  * Todas las pistas (archivos OGG) se decodifican UNA sola vez en el primer
+    clic (_preload_web_music) y quedan como objetos Sound en RAM. Cambiar de
+    tema durante el gameplay ya no lee ni decodifica nada: solo play/stop de
+    un buffer ya en memoria.
+  * La musica se reproduce SIEMPRE en un canal dedicado
+    (pygame.mixer.Channel(0), creado con try/except): aunque el motor de
+    audio del navegador ignore set_reserved, ningun SFX (canales automaticos)
+    puede arrebatarle el canal y cortarla. Esto elimina el entrecorte que
+    causaba la musica asignada a un canal cualquiera del pool y que un SFX
+    pisara al sonar.
+  * canales reservados (set_reserved) y 12 canales en total: suficientes para
+    una oleada de efectos sin exceder lo que WebAudio mezcla en tiempo real
+    en un movil (demasiadas fuentes simultaneas == entrecortes).
+  * stop_music y set_music_volume tocan SOLO el canal/buffers de musica,
+    nunca los efectos (SFX en self.sounds quedan intactos).
+
+En escritorio el comportamiento es identico al clasico (Sound con carga
+perezosa): no se altero nada.
 """
 import os
 
@@ -95,6 +114,9 @@ class AudioManager:
         self._sound_cache = {}
         self.final_lock = None
         self._pending_music = None
+        self._web_music = {}
+        self._music_channel = None
+        self._reserved_set = False
         if not S.IS_WEB:
             self._iniciar_audio()
 
@@ -103,8 +125,35 @@ class AudioManager:
         """Abre el mixer y carga sonidos. En la web se llama al primer clic."""
         try:
             if not pygame.mixer.get_init():
-                buffer = 4096 if S.IS_WEB else 512
+                # PC: 1024 (23 ms) en vez de 512 para dar margen al mixer contra
+                # picos del hilo principal (presentacion/escala del frame) sin
+                # notar latencia. En web se mantiene 4096 (limite de pygbag).
+                buffer = 4096 if S.IS_WEB else 1024
                 pygame.mixer.init(SR, -16, 2, buffer)
+            if S.IS_WEB:
+                # Canales equilibrados: suficientes para una oleada de SFX sin
+                # exceder lo que el motor de audio del navegador mezcla en
+                # tiempo real (demasiadas fuentes WebAudio simultaneas en un
+                # movil de gama media == entrecortes). La musica se reserva.
+                try:
+                    pygame.mixer.set_num_channels(12)
+                except Exception:
+                    pass
+                if not self._reserved_set:
+                    try:
+                        pygame.mixer.set_reserved(2)
+                        self._reserved_set = True
+                    except Exception:
+                        self._reserved_set = False
+                # Canal dedicado para la musica: aunque set_reserved no se
+                # respete en la build web, la musica SIEMPRE se pincha aqui
+                # explicitamente y ningun SFX (que usa canales automaticos)
+                # puede robarle/arrebatarle el canal y cortarla.
+                if self._music_channel is None:
+                    try:
+                        self._music_channel = pygame.mixer.Channel(0)
+                    except Exception:
+                        self._music_channel = None
         except Exception:
             print("El navegador bloque\u00f3 el audio temporalmente")
             return
@@ -116,6 +165,11 @@ class AudioManager:
         if np is not None:
             try:
                 self._synth()
+            except Exception:
+                pass
+        if S.IS_WEB:
+            try:
+                self._preload_web_music()
             except Exception:
                 pass
 
@@ -244,21 +298,71 @@ class AudioManager:
             return
         self._start(key, fade_ms)
 
+    def _preload_web_music(self):
+        """Web: decodifica UNA sola vez todas las pistas de archivo (al primer
+        clic, en el menu) y las deja en RAM listas para tocar en loop. Asi
+        cambiar de tema durante el gameplay nunca lee ni decodifica el disco:
+        solo play/stop de un buffer ya en memoria. Si una pista falla se quita
+        de _file_music para que _start use la version sintetizada si existe."""
+        for key, path in list(self._file_music.items()):
+            try:
+                self._web_music[key] = pygame.mixer.Sound(path)
+            except Exception:
+                self._file_music.pop(key, None)
+
     def _start(self, key, fade_ms=600):
         path = self._file_music.get(key)
-        try:
-            if path:
-                if path not in self._sound_cache:
-                    self._sound_cache[path] = pygame.mixer.Sound(path)
-                snd = self._sound_cache[path]
-            else:
+        snd = None
+        if S.IS_WEB:
+            # Web: solo buffers ya precargados en memoria. Nunca abrir o
+            # decodificar un archivo en pleno juego, es lo que congelaba el
+            # hilo principal (pygame.mixer.music hacia exactamente eso en cada
+            # cambio de tema).
+            snd = self._web_music.get(key) or self.music.get(key)
+            if snd is None:
+                return
+            # En la build web el fade se DESCARTA (fade_ms -> 0):
+            #
+            #   * Channel.play(loops=-1, fade_ms=N) sobre un buffer que acaba
+            #     de pasar por fadeout (el tema anterior) es exactamente la
+            #     secuencia que, en el audio WebAudio de pygbag (mezcla en el
+            #     hilo principal JS), atasca el engine y CONGELA el juego al
+            #     cambiar de tema con la musica encendida. La musica de menu
+            #     (misma llamada pero sin fadeout previo ni SFX entrantes)
+            #     nunca se congelaba: el disparador es el fadeout+play-fade en
+            #     cadena, no el propio bucle.
+            #   * El corte/paso al cambiar de tema pierde el crossfade suave,
+            #     pero en web un corte brusco infinitamente preferible a un
+            #     bloqueo total del hilo principal. En escritorio los fades se
+            #     conservan intactos.
+            fade_ms = 0
+        else:
+            try:
+                if path:
+                    if path not in self._sound_cache:
+                        self._sound_cache[path] = pygame.mixer.Sound(path)
+                    snd = self._sound_cache[path]
+                else:
+                    snd = self.music.get(key)
+            except Exception:
                 snd = self.music.get(key)
             if snd is None:
                 return
-            snd.set_volume(self.music_volume)
+        snd.set_volume(self.music_volume)
+        fade_ms = 0 if S.IS_WEB else fade_ms
+        if S.IS_WEB and self._music_channel is not None:
+            try:
+                self._music_channel.play(snd, loops=-1, fade_ms=fade_ms)
+                return
+            except Exception:
+                pass
+        try:
             snd.play(loops=-1, fade_ms=fade_ms)
         except Exception:
-            pass
+            try:
+                snd.play(loops=-1)
+            except Exception:
+                pass
 
     def play_final_song(self):
         """Pista final: usa flores_amarillas_final.ogg si existe."""
@@ -270,10 +374,36 @@ class AudioManager:
     def stop_music(self, fade_ms=400):
         if not self.enabled:
             return
-        for snd in set(self.music.values()) | set(self._sound_cache.values()):
+        if S.IS_WEB and self._music_channel is not None:
+            # Web: corte SECO, nunca fade.
+            #
+            #   * En el audio WebAudio de pygbag, encadenar un fadeout del
+            #     canal dedicado (o de TODOS los buffers de musica, como hacia
+            #     el bucle de abajo) con un play(loops=-1, fade_ms) inmediato
+            #     en el MISMO canal dejaba al engine JS esperando a que el
+            #     canal se libere del fade y congelaba TODO el juego en el
+            #     primer cambio de tema. El menu nunca lo disparaba porque
+            #     ahi no hay stop/play en cadena (solo el primer play).
+            #   * Solucion web: stop() puro del canal y cero fades. El buffer
+            #     que suena vive solo en ese canal, asi que con parar el canal
+            #     basta; no hace falta (y congelaba) tocar uno a uno los otros
+            #     buffers. Cambiar de tema es entonces: stop() + play() sin
+            #     ningun fade ni espera => no hay nada en lo que atascarse.
+            #   * En escritorio si se mantienen los fades tal cual.
+            try:
+                self._music_channel.stop()
+            except Exception:
+                pass
+            return
+        if S.IS_WEB:
+            # Web (sin canal dedicado): solo los buffers de musica.
+            targets = set(self.music.values()) | set(self._web_music.values())
+        else:
+            targets = set(self.music.values()) | set(self._sound_cache.values())
+        for snd in targets:
             try:
                 if fade_ms:
-                    snd.fadeout(fade_ms)
+                    snd.fadeout(int(fade_ms))
                 else:
                     snd.stop()
             except Exception:
@@ -292,7 +422,15 @@ class AudioManager:
 
     def set_music_volume(self, value):
         self.music_volume = round(max(0.0, min(1.0, value)), 2)
-        for snd in set(self.music.values()) | set(self._sound_cache.values()):
+        if S.IS_WEB and self._music_channel is not None:
+            try:
+                self._music_channel.set_volume(self.music_volume)
+            except Exception:
+                pass
+        targets = set(self.music.values()) | set(self._sound_cache.values())
+        if S.IS_WEB:
+            targets |= set(self._web_music.values())
+        for snd in targets:
             try:
                 snd.set_volume(self.music_volume)
             except Exception:
